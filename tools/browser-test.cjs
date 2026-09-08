@@ -29,9 +29,14 @@ async function layoutAndPixels(page) {
     }
     const identity = document.querySelector('.identity').getBoundingClientRect();
     const controls = document.querySelector('.controls').getBoundingClientRect();
+    const maps = document.querySelector('.map-switcher').getBoundingClientRect();
+    const credits = document.querySelector('.music-credit').getBoundingClientRect();
     return { colors: colors.size, signature, width: innerWidth, height: innerHeight,
       overflow: document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight,
       headerOverlap: identity.right > controls.left - 3,
+      mapOverlap: maps.top < Math.max(identity.bottom, controls.bottom) + 8,
+      mapsClipped: maps.left < 0 || maps.right > innerWidth,
+      creditsClipped: credits.left < 0 || credits.right > innerWidth,
       buttons: [...document.querySelectorAll('.icon-button')].filter(button => button.getBoundingClientRect().width > 0).map(button => ({ label: button.getAttribute('aria-label'), width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height, icon: Boolean(button.querySelector('svg')) })),
       touchAction: getComputedStyle(canvas).touchAction, errorVisible: !document.getElementById('error').hidden };
   });
@@ -39,6 +44,11 @@ async function layoutAndPixels(page) {
 
 function screenPoint(state, viewport, point) {
   return { x: point.x / state.width * viewport.width, y: point.y / state.height * viewport.height };
+}
+
+function blobWidth(state) {
+  const positions = state.blob.particles.map(particle => particle.x);
+  return Math.max(...positions) - Math.min(...positions);
 }
 
 async function pointerEvent(page, type, pointerId, point) {
@@ -63,8 +73,11 @@ async function exercise(page, context, config) {
     await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: center.x - 15, y: center.y, id: 1 }, { x: center.x + 15, y: center.y, id: 2 }] });
     await page.waitForFunction(() => window.__blobIsland.snapshot().drags === 2);
     assert.equal((await snapshot(page)).drags, 2, 'Two real touch contacts must create independent grabs');
-    await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: center.x - 40, y: center.y - 60, id: 1 }, { x: center.x + 40, y: center.y - 60, id: 2 }] });
-    await frames(page, 12);
+    const spread = 120 * config.viewport.height / 900;
+    await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: center.x - spread, y: center.y - 90, id: 1 }, { x: center.x + spread, y: center.y - 90, id: 2 }] });
+    await frames(page, 75);
+    assert.ok(blobWidth(await snapshot(page)) > blobWidth(current) * 2, 'Native two-finger input must visibly stretch the mesh');
+    await page.screenshot({ path: path.join(output, `${config.name}-stretched.png`) });
     await session.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
     assert.equal((await snapshot(page)).drags, 0, 'Cancelled native touches must not strand the jelly');
     await session.detach();
@@ -93,7 +106,7 @@ async function exercise(page, context, config) {
   const reset = await snapshot(page);
   assert.equal(reset.paused, false);
   assert.ok(Math.abs(reset.blob.x / reset.width - 0.30) < 0.025, 'Reset must restore the jelly to the beach');
-  assert.equal(reset.props.length, 4, 'Reset must restore exactly four toys');
+  assert.equal(reset.props.length, reset.initialProps, 'Reset must restore exactly the current area\'s initial toys');
   if (reset.audioSupported) {
     await page.locator('#sound').click();
     await page.waitForFunction(() => window.__blobIsland.snapshot().sound);
@@ -111,6 +124,123 @@ async function exercise(page, context, config) {
   assert.ok(final.blob.area > 1000, 'Interactions must preserve the soft mesh');
 }
 
+async function exerciseIslands(page, config) {
+  await page.locator('#reset').click();
+  await page.waitForFunction(() => window.__blobIsland.snapshot().time > 1200);
+  const initial = await snapshot(page);
+  if (initial.audioSupported) {
+    await page.locator('#sound').click();
+    await page.waitForFunction(() => {
+      const state = window.__blobIsland.snapshot();
+      return state.sound && state.audioState === 'running';
+    });
+  }
+  const center = screenPoint(initial, config.viewport, initial.blob);
+  const scale = config.viewport.height / 900;
+  await pointerEvent(page, 'pointerdown', 21, { x: center.x - 24 * scale, y: center.y });
+  await pointerEvent(page, 'pointerdown', 22, { x: center.x + 24 * scale, y: center.y });
+  assert.equal((await snapshot(page)).drags, 2, 'Both skin grips must be held independently');
+  const left = { x: Math.max(9, center.x - 120 * scale), y: center.y - 100 * scale };
+  const right = { x: center.x + 120 * scale, y: center.y - 100 * scale };
+  await pointerEvent(page, 'pointermove', 21, left);
+  await pointerEvent(page, 'pointermove', 22, right);
+  await frames(page, 100);
+  const stretched = await snapshot(page);
+  assert.ok(blobWidth(stretched) > blobWidth(initial) * 2, 'The rendered jelly must stretch rather than act as a rigid ball');
+  assert.ok(stretched.blob.area > 1000, 'The stretched character must retain its volume');
+  await page.screenshot({ path: path.join(output, `${config.name}-jelly.png`) });
+  await pointerEvent(page, 'pointercancel', 21, left);
+  assert.equal((await snapshot(page)).drags, 1, 'Cancelling one finger must leave the other grip intact');
+  await pointerEvent(page, 'pointerup', 22, right);
+  await frames(page, 80);
+  assert.equal((await snapshot(page)).drags, 0);
+  if (initial.audioSupported) {
+    const effects = (await snapshot(page)).soundEvents;
+    assert.ok(effects.grab > 0, 'Touching the jelly must produce its specific grab effect');
+    assert.ok(effects.stretch > 0, 'Shape changes must produce a stretch effect without constant buzzing');
+    assert.ok(effects.release > 0, 'Releasing a finger must produce the separate release effect');
+  }
+
+  await page.locator('[data-map="pools"]').click();
+  await page.waitForFunction(() => window.__blobIsland.snapshot().map === 'pools' && window.__blobIsland.snapshot().time > 1100);
+  const pools = await snapshot(page);
+  assert.ok(pools.props.some(prop => prop.kind === 'shell'), 'Tide Pools must have sinking shells');
+  await page.screenshot({ path: path.join(output, `${config.name}-pools.png`) });
+  const crown = screenPoint(pools, config.viewport, pools.tree.crown);
+  await pointerEvent(page, 'pointerdown', 31, crown);
+  assert.equal((await snapshot(page)).drags, 1, 'The visible palm must accept a touch');
+  const shake = { x: crown.x + 150 * scale, y: crown.y + 35 * scale };
+  await pointerEvent(page, 'pointermove', 31, shake);
+  await page.waitForFunction(() => window.__blobIsland.snapshot().tree.dropped >= 1);
+  await pointerEvent(page, 'pointerup', 31, shake);
+  const shaken = await snapshot(page);
+  assert.ok(Math.abs(shaken.tree.angle) > 0.035, 'The palm must visibly react');
+  assert.equal(shaken.props.length, shaken.initialProps + shaken.tree.dropped, 'Fallen coconuts must be playable objects');
+  await page.screenshot({ path: path.join(output, `${config.name}-palm.png`) });
+  await page.locator('#pause').click();
+  const frozen = await snapshot(page);
+  assert.equal(frozen.activeVoices, 0, 'Pausing must discard effects that would otherwise play on resume');
+  await page.locator('[data-map="sunset"]').click();
+  const sunset = await snapshot(page);
+  assert.equal(sunset.map, 'sunset');
+  assert.ok(sunset.props.some(prop => prop.kind === 'seesaw'), 'Sunset Cove must have its hinged seesaw');
+  await page.screenshot({ path: path.join(output, `${config.name}-sunset.png`) });
+  await page.locator('[data-map="pools"]').click();
+  const restored = await snapshot(page);
+  assert.equal(restored.time, frozen.time, 'Unvisited areas must remain frozen, not secretly reset or simulate');
+  assert.equal(restored.tree.dropped, frozen.tree.dropped, 'Switching areas must retain fallen coconuts');
+  assert.equal(restored.props.length, frozen.props.length, 'Switching areas must not duplicate toys');
+  await page.locator('#reset').click();
+  assert.equal((await snapshot(page)).tree.attached, 3, 'Reset must restore this island\'s coconuts');
+  await page.locator('[data-map="lagoon"]').click();
+  await page.locator('#reset').click();
+  if (config.name === 'desktop' || config.name === 'ipad-landscape') {
+    await page.waitForFunction(() => window.__blobIsland.snapshot().time > 1100);
+    const resting = await snapshot(page);
+    const blob = screenPoint(resting, config.viewport, resting.blob);
+    const target = resting.tree.hitTarget;
+    const lift = screenPoint(resting, config.viewport, { x: target.x + 135, y: target.y - 15 });
+    const crash = screenPoint(resting, config.viewport, { x: target.x - 24, y: target.y - 15 });
+    await pointerEvent(page, 'pointerdown', 41, blob);
+    await pointerEvent(page, 'pointermove', 41, lift);
+    await frames(page, 65);
+    await pointerEvent(page, 'pointermove', 41, crash);
+    await page.waitForFunction(() => window.__blobIsland.snapshot().tree.impacts > 0);
+    await pointerEvent(page, 'pointerup', 41, crash);
+    assert.ok((await snapshot(page)).tree.dropped >= 1, 'Crashing the jelly into the visible trunk must knock down a coconut');
+    await page.screenshot({ path: path.join(output, `${config.name}-crash.png`) });
+    await page.locator('#reset').click();
+  }
+
+  if (initial.musicSupported) {
+    await page.locator('#music').click();
+    await page.waitForFunction(() => window.__blobIsland.snapshot().music && window.__blobIsland.snapshot().musicTime > 0.2);
+    assert.equal((await snapshot(page)).musicError, null, 'The embedded recording must decode and play');
+    await page.locator('#pause').click();
+    const paused = await snapshot(page);
+    await frames(page, 10);
+    assert.equal((await snapshot(page)).musicPaused, true, 'Pausing the game must also pause the music');
+    assert.ok(Math.abs((await snapshot(page)).musicTime - paused.musicTime) < 0.1);
+    await page.locator('#pause').click();
+    await page.waitForFunction(previous => window.__blobIsland.snapshot().musicTime > previous + 0.15, paused.musicTime);
+    if ((await snapshot(page)).sound) await page.locator('#sound').click();
+    const independent = await snapshot(page);
+    assert.equal(independent.sound, false, 'Sound effects can be muted independently');
+    await page.waitForFunction(previous => window.__blobIsland.snapshot().musicTime > previous + 0.15, independent.musicTime);
+    const musicBeforeSwitch = (await snapshot(page)).musicTime;
+    await page.locator('[data-map="sunset"]').click();
+    await page.waitForFunction(previous => window.__blobIsland.snapshot().musicTime > previous + 0.15, musicBeforeSwitch);
+    assert.equal((await snapshot(page)).musicPaused, false, 'Music must continue through an area change');
+    await page.locator('[data-map="lagoon"]').click();
+    await page.locator('#music').click();
+    assert.equal((await snapshot(page)).musicPaused, true, 'The separate music control must stop playback');
+  } else assert.equal(await page.locator('#music').isDisabled(), true, 'An unavailable music decoder must have an honest disabled control');
+  if ((await snapshot(page)).sound) await page.locator('#sound').click();
+  assert.equal((await snapshot(page)).activeVoices, 0, 'Muting effects must release every short-lived sound node');
+  await frames(page, 60);
+  assert.equal((await snapshot(page)).finite, true);
+}
+
 async function run() {
   fs.mkdirSync(output, { recursive: true });
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
@@ -123,6 +253,7 @@ async function run() {
     { name: 'ipad-landscape', engine: 'webkit', viewport: { width: 1180, height: 820 }, touch: true },
     { name: 'ipad-portrait', engine: 'webkit', viewport: { width: 820, height: 1180 }, touch: true },
     { name: 'phone', engine: 'webkit', viewport: { width: 390, height: 844 }, touch: true },
+    { name: 'small-phone', engine: 'webkit', viewport: { width: 320, height: 568 }, touch: true },
     { name: 'ipad-dark', engine: 'webkit', viewport: { width: 1180, height: 820 }, touch: true, theme: 'dark' },
   ];
   for (const engineName of ['chromium', 'webkit']) {
@@ -145,6 +276,9 @@ async function run() {
           assert.equal(initial.errorVisible, false, 'The game must not show a startup error');
           assert.equal(initial.overflow, false, 'The page must fit without scrolling');
           assert.equal(initial.headerOverlap, false, 'The title and toolbar must not overlap');
+          assert.equal(initial.mapOverlap, false, 'Area controls must not overlap the header');
+          assert.equal(initial.mapsClipped, false, 'Every area button must fit the viewport');
+          assert.equal(initial.creditsClipped, false, 'Music attribution must remain visible');
           assert.equal(initial.touchAction, 'none', 'The play surface must own its touch gestures');
           assert.ok(initial.colors > 60, 'The canvas must contain a nonblank, richly colored scene');
           for (const button of initial.buttons) {
@@ -154,6 +288,7 @@ async function run() {
           assert.equal((await snapshot(page)).audioState, 'not-created', 'Audio must wait for a user gesture');
           await page.screenshot({ path: path.join(output, `${config.name}.png`) });
           await exercise(page, context, config);
+          await exerciseIslands(page, config);
           const final = await layoutAndPixels(page);
           assert.notEqual(initial.signature, final.signature, 'The canvas must actually animate');
           if (config.name === 'ipad-landscape' || config.name === 'tablet-native-touch') {

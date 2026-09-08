@@ -17,7 +17,35 @@ export function drawProp(art, context, prop) {
     oval(context, 0, 0, radius, radius, shine);
     context.strokeStyle = paint(ink, 0.16); context.lineWidth = 1;
     context.beginPath(); context.arc(0, 0, radius, 0, TAU); context.stroke();
-  } else if (kind === 'raft') {
+  } else if (kind === 'ring') {
+    context.lineWidth = radius * 0.47; context.strokeStyle = paint(mix(paper, yellow, 0.06));
+    context.beginPath(); context.arc(0, 0, radius * 0.77, 0, TAU); context.stroke();
+    context.strokeStyle = paint(mix(pink, paper, 0.14));
+    for (let index = 0; index < 4; index += 1) {
+      context.beginPath(); context.arc(0, 0, radius * 0.77, index * TAU / 4, index * TAU / 4 + 0.48); context.stroke();
+    }
+    context.strokeStyle = paint(paper, 0.76); context.lineWidth = 2;
+    context.beginPath(); context.arc(0, 0, radius * 0.85, Math.PI * 1.12, Math.PI * 1.72); context.stroke();
+  } else if (kind === 'crate') {
+    context.fillStyle = paint(mix(wood, yellow, 0.36)); context.fillRect(-width / 2, -height / 2, width, height);
+    context.strokeStyle = paint(mix(wood, ink, 0.15)); context.lineWidth = 1.8;
+    for (let index = 1; index < 4; index += 1) {
+      context.beginPath(); context.moveTo(-width / 2, -height / 2 + height * index / 4); context.lineTo(width / 2, -height / 2 + height * index / 4); context.stroke();
+    }
+    context.strokeStyle = paint(mix(wood, paper, 0.28)); context.lineWidth = 4;
+    context.strokeRect(-width / 2 + 2, -height / 2 + 2, width - 4, height - 4);
+    context.beginPath(); context.moveTo(-width / 2 + 3, -height / 2 + 3); context.lineTo(width / 2 - 3, height / 2 - 3); context.stroke();
+    for (const cornerX of [-1, 1]) for (const cornerY of [-1, 1]) oval(context, cornerX * (width / 2 - 4), cornerY * (height / 2 - 4), 1.1, 1.1, paint(ink, 0.7));
+  } else if (kind === 'shell') {
+    const shell = context.createRadialGradient(-radius * 0.3, -radius * 0.2, 1, 0, 0, radius);
+    shell.addColorStop(0, paint(paper)); shell.addColorStop(1, paint(mix(pink, paper, 0.60)));
+    oval(context, 0, 0, radius, radius * 0.9, shell);
+    context.strokeStyle = paint(mix(pink, wood, 0.3), 0.46); context.lineWidth = 1.2;
+    for (let index = 0; index < 7; index += 1) {
+      const angle = Math.PI + index / 6 * Math.PI;
+      context.beginPath(); context.moveTo(0, radius * 0.85); context.quadraticCurveTo(Math.cos(angle) * radius * 0.35, 0, Math.cos(angle) * radius * 0.92, Math.sin(angle) * radius * 0.8); context.stroke();
+    }
+  } else if (kind === 'raft' || kind === 'seesaw') {
     for (let index = 0; index < 3; index += 1) {
       const top = -height / 2 + index * height / 3;
       const log = context.createLinearGradient(0, top, 0, top + height / 3);
@@ -82,12 +110,20 @@ export function drawBlob(art, context, island, time, pointer, delta) {
   const gradient = context.createLinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom);
   const rim = context.createLinearGradient(bounds.left, bounds.bottom, bounds.right, bounds.top);
   art.rainbow.forEach((color, index) => {
-    gradient.addColorStop(index / 6, paint(color, 0.13));
-    rim.addColorStop(index / 6, paint(mix(color, paper, 0.18), 0.72));
+    gradient.addColorStop(index / 6, paint(color, 0.10));
+    rim.addColorStop(index / 6, paint(mix(color, paper, 0.12), 0.90));
   });
   blobPath(context, points); context.fillStyle = gradient; context.fill();
   context.strokeStyle = rim; context.lineWidth = 2.4; context.stroke();
   context.save(); blobPath(context, points); context.clip();
+  const bodyWidth = bounds.right - bounds.left;
+  const bodyHeight = bounds.bottom - bounds.top;
+  art.rainbow.forEach((color, index) => {
+    context.strokeStyle = paint(color, 0.17); context.lineWidth = 2.6;
+    context.beginPath(); context.moveTo(bounds.left - 3, bounds.top + bodyHeight * (0.22 + index * 0.10));
+    context.bezierCurveTo(bounds.left + bodyWidth * 0.25, bounds.top + bodyHeight * (index * 0.08 - 0.08), bounds.left + bodyWidth * 0.68, bounds.bottom - bodyHeight * 0.15, bounds.right + 2, bounds.top + bodyHeight * index * 0.11);
+    context.stroke();
+  });
   const sheen = context.createRadialGradient(center.x - 12, center.y - 19, 2, center.x, center.y, 47);
   sheen.addColorStop(0, paint(paper, 0.18)); sheen.addColorStop(0.48, paint(paper, 0));
   sheen.addColorStop(0.85, paint(paper, 0.025)); sheen.addColorStop(1, paint(paper, 0.32));
@@ -97,14 +133,16 @@ export function drawBlob(art, context, island, time, pointer, delta) {
   oval(context, center.x + 18, center.y + 20, 4.5, 1.5, paint(paper, 0.52), -0.5); context.restore();
   art.faceAngle += (clamp(core.velocity.x * 0.035, -0.30, 0.30) - art.faceAngle) * Math.min(1, delta * 0.009);
   context.save(); context.translate(center.x, center.y + 1); context.rotate(art.faceAngle);
-  context.scale(clamp((bounds.right - bounds.left) / 72, 0.80, 1.16), 1);
+  context.scale(clamp(bodyWidth / 86, 0.80, 1.6), clamp(bodyHeight / 66, 0.78, 1.12));
   const blink = time % 5900 > 5740;
+  const fingers = [...island.drags.values()].filter(drag => drag.kind === 'blob');
   for (let index = 0; index < 2; index += 1) {
     const eyeX = index === 0 ? -10.5 : 10.5;
     const eyeY = index === 0 ? -5 : -6.2;
     const pupil = art.pupils[index];
-    const lookX = pointer ? clamp((pointer.x - center.x) / 110, -2.5, 2.5) : Math.sin(time * 0.0006) * 0.5;
-    const lookY = pointer ? clamp((pointer.y - center.y) / 120, -1.6, 1.8) : 0.6;
+    const lookAt = fingers.length > 1 ? fingers[index % fingers.length].target : pointer;
+    const lookX = lookAt ? clamp((lookAt.x - center.x) / 110, -2.5, 2.5) : Math.sin(time * 0.0006) * 0.5;
+    const lookY = lookAt ? clamp((lookAt.y - center.y) / 120, -1.6, 1.8) : 0.6;
     const targetX = clamp(lookX - core.velocity.x * 0.37, -3.9, 3.9);
     const targetY = clamp(lookY - core.velocity.y * 0.31 + 0.9, -3.3, 3.7);
     const tick = Math.min(2, delta / 16.667);

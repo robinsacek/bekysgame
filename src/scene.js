@@ -41,6 +41,7 @@ export class IslandScene {
     if (!this.context) throw new Error('Canvas is not available.');
     this.width = island.width;
     this.height = island.height;
+    this.map = island.map;
     this.scale = canvas.height / island.height;
     Object.assign(this, { paint, mix, oval, clamp });
     this.random = randomSource();
@@ -65,6 +66,27 @@ export class IslandScene {
     background.scale(this.scale, this.scale);
     this.drawBackground(background, island);
     drawLogo(this);
+    this.drawMapPreviews();
+  }
+
+  drawMapPreviews() {
+    const { paper, blue, ocean, yellow, pink, sand, leaf, wood, ink } = this.colors;
+    for (const button of document.querySelectorAll('[data-map]')) {
+      const context = button.querySelector('canvas').getContext('2d');
+      const sunset = button.dataset.map === 'sunset';
+      context.fillStyle = paint(mix(paper, sunset ? pink : blue, 0.22)); context.fillRect(0, 0, 64, 64);
+      oval(context, 47, sunset ? 29 : 16, sunset ? 10 : 6, sunset ? 10 : 6, paint(mix(paper, yellow, 0.35)));
+      context.fillStyle = paint(mix(ocean, paper, 0.42)); context.fillRect(0, 34, 64, 30);
+      polygon(context, [[0, 44], [24, 42], [53, 64], [0, 64]], paint(sand));
+      if (button.dataset.map === 'pools') {
+        polygon(context, [[23, 53], [29, 42], [42, 42], [48, 53]], paint(mix(ink, paper, 0.56)));
+        polygon(context, [[45, 43], [50, 35], [58, 35], [63, 43]], paint(mix(ink, paper, 0.66)));
+      } else {
+        context.strokeStyle = paint(wood); context.lineWidth = 4;
+        context.beginPath(); context.moveTo(13, 49); context.quadraticCurveTo(14, 31, 21, 23); context.stroke();
+        for (let index = 0; index < 5; index += 1) this.leaf(context, 21, 23, 18, 8, index * 1.2, paint(leaf));
+      }
+    }
   }
 
   cloud(context, positionX, positionY, size, opacity) {
@@ -107,7 +129,7 @@ export class IslandScene {
     context.lineWidth = 2.4; context.strokeStyle = paint(mix(this.colors.leaf, this.colors.yellow, 0.23)); context.stroke();
   }
 
-  palm(context, positionX, baseY, height, lean, scale = 1) {
+  palm(context, positionX, baseY, height, lean, scale = 1, showFruit = true) {
     const { wood, yellow, ink, leaf, green } = this.colors;
     context.save(); context.translate(positionX, baseY); context.scale(scale, scale);
     const bark = context.createLinearGradient(0, 0, 35, -height);
@@ -128,21 +150,24 @@ export class IslandScene {
     }
     context.translate(lean, -height);
     [[-174, 22], [-143, -43], [-64, -80], [30, -86], [128, -60], [186, -4], [178, 69], [73, 96], [-107, 77]].forEach(([targetX, targetY], index) => this.frond(context, targetX, targetY, paint(mix(leaf, green, index % 3 * 0.19))));
-    oval(context, -9, 13, 10, 13, paint(wood)); oval(context, 8, 17, 10, 12, paint(mix(wood, yellow, 0.20))); oval(context, 0, 0, 12, 10, paint(leaf));
+    if (showFruit) {
+      oval(context, -9, 13, 10, 13, paint(wood)); oval(context, 8, 17, 10, 12, paint(mix(wood, yellow, 0.20)));
+    }
+    oval(context, 0, 0, 12, 10, paint(leaf));
     context.restore();
   }
 
   drawBackground(context, island) {
     const { width, height } = this;
     const { ground, bottom, shore, toe, water, waterStart } = island.layout;
-    const { paper, ink, blue, green, yellow, sand, leaf, ocean } = this.colors;
+    const { paper, ink, blue, green, yellow, sand, leaf, ocean, pink } = this.colors;
     const random = randomSource();
-    const horizon = height * 0.405;
+    const horizon = height * this.map.horizon;
     const sky = context.createLinearGradient(0, 0, 0, horizon + 70);
-    sky.addColorStop(0, paint(this.dark ? mix(ink, blue, 0.26) : mix(paper, blue, 0.23)));
-    sky.addColorStop(1, paint(this.dark ? mix(ink, blue, 0.38) : mix(paper, yellow, 0.035)));
+    sky.addColorStop(0, paint(this.dark ? mix(ink, blue, 0.26) : mix(mix(paper, blue, 0.23), mix(paper, pink, 0.28), this.map.warmth * 2.4)));
+    sky.addColorStop(1, paint(this.dark ? mix(ink, blue, 0.38) : mix(paper, yellow, 0.035 + this.map.warmth * 0.68)));
     context.fillStyle = sky; context.fillRect(0, 0, width, height);
-    oval(context, width * 0.77, 170, 33, 33, paint(mix(paper, yellow, 0.13), 0.95));
+    oval(context, width * 0.77, 170 + this.map.warmth * 370, 33 + this.map.warmth * 48, 33 + this.map.warmth * 48, paint(mix(paper, yellow, 0.13 + this.map.warmth), 0.95));
     this.cloud(context, width * 0.28, 180, 0.9, 0.55); this.cloud(context, width * 0.60, 240, 0.64, 0.50);
     this.cloud(context, width * 0.97, 275, 1.05, 0.52); this.cloud(context, width * 0.015, 255, 0.61, 0.44);
     const sea = context.createLinearGradient(0, horizon, 0, ground + 40);
@@ -170,7 +195,6 @@ export class IslandScene {
     for (let index = 0; index < 14; index += 1) this.leaf(context, random() * shore * 0.56, ground - 34, 55 + random() * 70, 15 + random() * 9, -2.8 + random() * 2.5, paint(mix(leaf, green, random() * 0.5)));
     const palmScale = clamp(width / 1300, 0.69, 1);
     this.palm(context, width * 0.027, ground - 30, 248, -18, palmScale * 0.77);
-    this.palm(context, width * 0.105, ground - 8, 325, 93, palmScale);
     const beach = context.createLinearGradient(0, ground, 0, height);
     beach.addColorStop(0, paint(mix(sand, paper, 0.34))); beach.addColorStop(0.65, paint(sand)); beach.addColorStop(1, paint(mix(sand, yellow, 0.12)));
     polygon(context, [[0, ground], [shore, ground], [toe, bottom], [width, bottom], [width, height], [0, height]], beach);
@@ -190,6 +214,35 @@ export class IslandScene {
     const shallow = context.createLinearGradient(0, water, 0, bottom);
     shallow.addColorStop(0, paint(mix(ocean, paper, 0.39), 0.18)); shallow.addColorStop(1, paint(mix(ocean, blue, 0.25), 0.30));
     polygon(context, [[waterStart, water], [width, water], [width, bottom], [toe, bottom]], shallow);
+    for (const rock of island.rocks) {
+      polygon(context, rock.vertices.map(vertex => [vertex.x, vertex.y]), paint(mix(ink, paper, 0.57)));
+      polygon(context, rock.vertices.slice(0, 3).map(vertex => [vertex.x, vertex.y]), paint(mix(ink, paper, 0.68)));
+      context.strokeStyle = paint(paper, 0.40); context.lineWidth = 2;
+      context.beginPath(); context.moveTo(rock.vertices[1].x, rock.vertices[1].y); context.lineTo(rock.vertices[2].x, rock.vertices[2].y); context.stroke();
+    }
+    for (const prop of island.props.filter(item => item.anchor)) {
+      polygon(context, [[prop.anchor.x - 17, ground], [prop.anchor.x, prop.anchor.y - 1], [prop.anchor.x + 17, ground]], paint(mix(this.colors.wood, yellow, 0.14)));
+      oval(context, prop.anchor.x, prop.anchor.y, 4, 4, paint(ink, 0.65));
+    }
+  }
+
+  drawTree(context, island, time) {
+    const tree = island.tree;
+    const base = tree.point({ x: 0, y: 0 });
+    context.save(); context.translate(base.x, base.y); context.rotate(tree.body.angle);
+    this.palm(context, 0, 0, tree.height, tree.lean, tree.scale, false);
+    context.restore();
+    for (const fruit of tree.fruits.filter(item => item.attached)) {
+      context.strokeStyle = paint(this.colors.wood); context.lineWidth = 1.8;
+      context.beginPath(); context.moveTo(tree.body.position.x + fruit.stem.pointA.x, tree.body.position.y + fruit.stem.pointA.y);
+      context.lineTo(fruit.body.position.x, fruit.body.position.y - fruit.radius * 0.65); context.stroke();
+      drawProp(this, context, fruit);
+    }
+    for (const rustle of tree.rustles) {
+      const age = (time - rustle.time) / 1000;
+      if (age < 0 || age > 1.2) continue;
+      for (let index = 0; index < 5; index += 1) this.leaf(context, rustle.x + Math.sin(index * 2.1) * age * 76, rustle.y + age * 55 + age * age * 90, 12, 4, index + age * 4, paint(this.colors.leaf, 1 - age / 1.2));
+    }
   }
 
   addSplash(event) {
@@ -249,7 +302,7 @@ export class IslandScene {
         polygon(context, [[positionX - direction * 8, positionY], [positionX - direction * 15, positionY - 4], [positionX - direction * 15, positionY + 4]], paint(blue, 0.24));
       }
       const boatX = this.width * 0.9 + Math.sin(time * 0.000045) * this.width * 0.035;
-      const boatY = 433 + Math.sin(time * 0.0008) * 1.3;
+      const boatY = this.height * this.map.horizon + 68 + Math.sin(time * 0.0008) * 1.3;
       polygon(context, [[boatX - 14, boatY], [boatX + 15, boatY], [boatX + 9, boatY + 5], [boatX - 8, boatY + 5]], paint(mix(ink, paper, 0.52)));
       polygon(context, [[boatX - 1, boatY - 35], [boatX - 1, boatY - 3], [boatX - 19, boatY - 3]], paint(paper, 0.83));
       polygon(context, [[boatX + 1, boatY - 29], [boatX + 1, boatY - 3], [boatX + 14, boatY - 3]], paint(mix(paper, this.colors.yellow, 0.09), 0.8));
@@ -259,6 +312,7 @@ export class IslandScene {
     const floor = center.x < shore ? ground : center.x < toe ? ground + (center.x - shore) / (toe - shore) * (bottom - ground) : bottom;
     const elevation = Math.max(0, floor - center.y - island.blob.radius);
     oval(context, center.x, floor + 3, clamp(31 - elevation * 0.04, 10, 31), 4, paint(ink, 0.12 * Math.max(0.15, 1 - elevation / 420)));
+    this.drawTree(context, island, time);
     for (const prop of island.props) drawProp(this, context, prop);
     drawBlob(this, context, island, time, pointer, delta);
     this.drawWater(context, island, time);

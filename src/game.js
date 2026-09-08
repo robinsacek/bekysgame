@@ -1,6 +1,6 @@
-import { createElement, RotateCcw, Volume2, VolumeX, Pause, Play, Maximize, Minimize, Sun } from 'lucide';
-import { Body } from 'matter-js';
-import { IslandPhysics, STEP, clamp } from './physics.js';
+import { createElement, RotateCcw, Volume2, VolumeX, Pause, Play, Maximize, Minimize, Sun, Music2, AudioLines } from 'lucide';
+import { IslandPhysics, STEP } from './physics.js';
+import { MAPS } from './maps.js';
 import { IslandScene } from './scene.js';
 import { IslandAudio } from './audio.js';
 
@@ -10,7 +10,8 @@ const announcer = document.getElementById('announcer');
 const audio = new IslandAudio();
 const keys = new Set();
 const waterPointers = new Set();
-const state = { paused: false, resize: true, timestamp: 0, accumulator: 0, pointer: null, frames: 0, audioBusy: false };
+const state = { paused: false, resize: true, timestamp: 0, accumulator: 0, pointer: null, frames: 0, audioBusy: false, musicBusy: false, mapId: 'lagoon' };
+const islands = new Map();
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 let island;
 let scene;
@@ -33,27 +34,38 @@ function resizeWorld(preserve = true) {
   const width = 900 * bounds.width / bounds.height;
   const ratio = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(5000000 / (bounds.width * bounds.height)));
   canvas.width = Math.round(bounds.width * ratio); canvas.height = Math.round(bounds.height * ratio);
-  island = new IslandPhysics(width, 900);
-  if (old && preserve) {
-    const oldCenter = old.blobPosition();
-    const newCenterX = clamp(oldCenter.x / old.width * width, 42, width - 42);
-    old.blob.particles.forEach((particle, index) => {
-      const target = island.blob.particles[index];
-      Body.setPosition(target, { x: newCenterX + particle.position.x - oldCenter.x, y: particle.position.y });
-      Body.setVelocity(target, particle.velocity); Body.setAngle(target, particle.angle);
-    });
-    old.props.forEach((prop, index) => {
-      const target = island.props[index];
-      const margin = target.radius || target.width / 2;
-      Body.setPosition(target.body, { x: clamp(prop.body.position.x / old.width * width, margin + 2, width - margin - 2), y: prop.body.position.y });
-      Body.setVelocity(target.body, prop.body.velocity); Body.setAngle(target.body, prop.body.angle);
-      Body.setAngularVelocity(target.body, prop.body.angularVelocity);
-    });
-    island.time = old.time;
-  }
+  island = new IslandPhysics(width, 900, state.mapId);
+  if (old && preserve) island.restoreFrom(old);
   old?.dispose();
+  islands.set(state.mapId, island);
   scene = new IslandScene(canvas, island);
   state.resize = false; state.accumulator = 0; state.timestamp = 0;
+  updateMapControls();
+}
+
+function updateMapControls() {
+  for (const button of document.querySelectorAll('[data-map]')) button.setAttribute('aria-pressed', String(button.dataset.map === state.mapId));
+  document.getElementById('place-name').textContent = island.map.name;
+  document.getElementById('place-caption').textContent = `NO. 0${MAPS.indexOf(island.map) + 1} / ${island.map.caption}`;
+  document.getElementById('temperature').textContent = `${island.map.temperature}\u00b0`;
+}
+
+function selectMap(mapId) {
+  if (mapId === state.mapId || !MAPS.some(map => map.id === mapId)) return;
+  releaseAll();
+  state.mapId = mapId;
+  const bounds = container.getBoundingClientRect();
+  const width = 900 * bounds.width / bounds.height;
+  island = islands.get(mapId) || new IslandPhysics(width, 900, mapId);
+  if (Math.abs(island.width - width) > 0.5) {
+    const resized = new IslandPhysics(width, 900, mapId);
+    resized.restoreFrom(island); island.dispose(); island = resized;
+  }
+  islands.set(mapId, island);
+  scene = new IslandScene(canvas, island);
+  state.pointer = null; state.timestamp = 0; state.accumulator = 0;
+  updateMapControls();
+  announcer.textContent = island.map.name;
 }
 
 function pointFromEvent(event) {
@@ -71,7 +83,7 @@ function onPointerDown(event) {
   const padding = (event.pointerType === 'mouse' ? 8 : 24) * island.height / canvas.getBoundingClientRect().height;
   const drag = island.grab(event.pointerId, point, Math.min(38, padding));
   if (drag) {
-    canvas.style.cursor = 'grabbing'; audio.plop(1);
+    canvas.style.cursor = 'grabbing'; audio.play(drag.kind === 'tree' ? 'rustle' : 'grab', 2, point.x / island.width * 2 - 1);
   } else if (point.x > island.layout.waterStart && point.y > island.layout.water - 35 && point.y < island.layout.bottom) {
     waterPointers.add(event.pointerId); island.splash(point.x, 2.5);
   }
@@ -88,6 +100,8 @@ function onPointerMove(event) {
 }
 
 function onPointerEnd(event) {
+  const drag = island?.drags.get(event.pointerId);
+  if (drag?.kind === 'blob' && event.type === 'pointerup') audio.play('release', 2);
   island?.release(event.pointerId); waterPointers.delete(event.pointerId);
   if (island?.drags.size === 0) canvas.style.cursor = 'default';
   if (event.pointerType !== 'mouse' && island?.drags.size === 0) state.pointer = null;
@@ -114,8 +128,25 @@ async function toggleSound() {
   state.audioBusy = false;
 }
 
+async function toggleMusic() {
+  if (state.musicBusy) return;
+  state.musicBusy = true;
+  try {
+    const enabled = await audio.toggleMusic();
+    updateMusicControl();
+    audio.pause(state.paused || document.hidden);
+    announcer.textContent = enabled ? 'Music on.' : 'Music off.';
+  } finally { state.musicBusy = false; }
+}
+
+function updateMusicControl() {
+  const button = document.getElementById('music');
+  button.setAttribute('aria-pressed', String(audio.musicEnabled)); button.setAttribute('aria-label', audio.musicEnabled ? 'Pause music' : 'Play music');
+  icon(button, audio.musicEnabled ? AudioLines : Music2);
+}
+
 function reset() {
-  resizeWorld(false); setPaused(false); state.pointer = null; audio.plop(2);
+  resizeWorld(false); setPaused(false); state.pointer = null; audio.play('grab', 2);
   announcer.textContent = 'The island has been reset.';
 }
 
@@ -133,9 +164,11 @@ function frame(timestamp) {
         island.step(); state.accumulator -= STEP;
         for (const splash of island.splashes.splice(0)) {
           scene.addSplash(splash);
-          if (splash.strength > 0.9) audio.plop(splash.strength);
         }
+        for (const sound of island.sounds.splice(0)) audio.play(sound.kind, sound.strength, sound.pan);
       }
+      const positions = island.blob.ring.map(particle => particle.position.x);
+      audio.stretch((Math.max(...positions) - Math.min(...positions)) / 80, [...island.drags.values()].filter(drag => drag.kind === 'blob').length > 1);
     } else state.accumulator = 0;
     scene.draw(island, island.time, state.pointer, reducedMotion.matches);
     state.frames += 1;
@@ -154,10 +187,16 @@ function showError(error) {
 
 try {
   icon(document.getElementById('sound'), VolumeX); icon(document.getElementById('pause'), Pause);
+  icon(document.getElementById('music'), Music2);
+  audio.onMusicChange = updateMusicControl;
   icon(document.getElementById('reset'), RotateCcw); icon(document.getElementById('fullscreen'), Maximize); icon(document.getElementById('sun-icon'), Sun);
   if (!audio.supported) {
     document.getElementById('sound').disabled = true;
     document.getElementById('sound').setAttribute('aria-label', 'Sound unavailable in this browser');
+  }
+  if (!audio.musicSupported) {
+    document.getElementById('music').disabled = true;
+    document.getElementById('music').setAttribute('aria-label', 'Music unavailable in this browser');
   }
   canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
   canvas.addEventListener('pointermove', onPointerMove, { passive: true });
@@ -167,6 +206,8 @@ try {
   document.getElementById('pause').addEventListener('click', () => setPaused(!state.paused));
   document.getElementById('reset').addEventListener('click', reset);
   document.getElementById('sound').addEventListener('click', toggleSound);
+  document.getElementById('music').addEventListener('click', toggleMusic);
+  for (const button of document.querySelectorAll('[data-map]')) button.addEventListener('click', () => selectMap(button.dataset.map));
   const fullscreen = document.getElementById('fullscreen');
   fullscreen.hidden = !(document.fullscreenEnabled && container.requestFullscreen);
   fullscreen.addEventListener('click', async () => {
@@ -194,6 +235,7 @@ try {
     releaseAll(); state.timestamp = 0; state.accumulator = 0; audio.pause(document.hidden || state.paused);
   });
   window.addEventListener('pagehide', () => { releaseAll(); audio.pause(true); });
+  window.addEventListener('pageshow', () => audio.pause(document.hidden || state.paused));
   const appearance = window.matchMedia('(prefers-color-scheme: dark)');
   appearance.addEventListener('change', event => {
     if (new URLSearchParams(location.search).has('scoutTheme')) return;
@@ -201,7 +243,7 @@ try {
   });
   resizeWorld(false);
   const favicon = document.createElement('link'); favicon.rel = 'icon'; favicon.href = document.getElementById('brand-mark').toDataURL(); document.head.append(favicon);
-  window.__blobIsland = Object.freeze({ snapshot: () => ({ ...island.snapshot(), paused: state.paused, sound: audio.enabled, audioSupported: audio.supported, audioState: audio.context?.state || 'not-created', frames: state.frames, waterTouches: waterPointers.size }) });
+  window.__blobIsland = Object.freeze({ snapshot: () => ({ ...island.snapshot(), version: 2, paused: state.paused, sound: audio.enabled, audioSupported: audio.supported, audioState: audio.context?.state || 'not-created', music: audio.musicEnabled, musicSupported: audio.musicSupported, musicPaused: audio.music.paused, musicTime: audio.music.currentTime, musicError: audio.music.error?.message || null, soundEvents: { ...audio.effectCounts }, activeVoices: audio.activeVoices, frames: state.frames, waterTouches: waterPointers.size }) });
   requestAnimationFrame(frame);
 } catch (error) {
   showError(error);

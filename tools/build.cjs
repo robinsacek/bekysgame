@@ -15,11 +15,12 @@ async function build() {
       target: ['safari15', 'chrome100', 'firefox100'],
       legalComments: 'inline',
       charset: 'ascii',
+      loader: { '.mp3': 'dataurl' },
     });
     const template = fs.readFileSync(path.join(root, 'src', 'page.html'), 'utf8').replace(/\r\n/g, '\n');
     if (!template.includes('/* BLOB_ISLAND_BUNDLE */')) throw new Error('Missing bundle insertion marker.');
     const bundle = result.outputFiles[0].text.replace(/[ \t]+$/gm, '').replace(/<\/script/gi, '<\\/script');
-    const notices = ['matter-js', 'lucide'].map(name => `${name}\n${fs.readFileSync(path.join(root, 'node_modules', name, 'LICENSE'), 'utf8')}`).join('\n\n');
+    const notices = ['matter-js', 'lucide'].map(name => `${name}\n${fs.readFileSync(path.join(root, 'node_modules', name, 'LICENSE'), 'utf8')}`).join('\n\n') + '\n\n' + fs.readFileSync(path.join(root, 'assets', 'MUSIC-LICENSE.md'), 'utf8').replace(/\r\n/g, '\n');
     const html = template.replace('/* BLOB_ISLAND_BUNDLE */', () => bundle).replace('</body>', () => `<!-- Third-party notices\n${notices.replace(/--/g, '- -')}\n-->\n</body>`);
     if (/<script[^>]+src\s*=/i.test(html)) throw new Error('The output must not load external scripts.');
     fs.writeFileSync(path.join(root, 'index.html'), html);
