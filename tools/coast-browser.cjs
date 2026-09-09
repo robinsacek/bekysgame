@@ -80,7 +80,7 @@ async function exerciseCoast(page, config, output) {
   await page.locator('#reset').click();
   await page.waitForFunction(() => window.__blobIsland.snapshot().time > 1100);
   const initial = await stateOf(page);
-  assert.equal(initial.version, 3);
+  assert.equal(initial.version, 4);
   assert.equal(initial.blob.name, 'Blobby');
   assert.equal(initial.width, 3200);
   assert.ok(initial.camera.width < initial.width, 'The coast must extend beyond the viewport');

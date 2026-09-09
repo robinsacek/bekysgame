@@ -107,7 +107,7 @@ export function drawProp(art, context, prop) {
   context.restore();
 }
 
-function blobPath(context, points) {
+export function blobPath(context, points) {
   const last = points[points.length - 1];
   context.beginPath(); context.moveTo((last.x + points[0].x) / 2, (last.y + points[0].y) / 2);
   points.forEach((point, index) => {
@@ -117,24 +117,37 @@ function blobPath(context, points) {
   context.closePath();
 }
 
-export function drawBlob(art, context, island, time, pointer, delta) {
-  const { paint, mix, oval, clamp } = art;
-  const { paper, ink, pink } = art.colors;
+export function blobDrawingPoints(island) {
   const center = island.blobPosition();
-  const { ring, center: core } = island.blob;
-  const points = ring.map(body => {
+  return island.blob.ring.map(body => {
     const differenceX = body.position.x - center.x;
     const differenceY = body.position.y - center.y;
     const distance = Math.hypot(differenceX, differenceY) || 1;
     return { x: body.position.x + differenceX / distance * 5, y: body.position.y + differenceY / distance * 5 };
   });
+}
+
+export function drawBlob(art, context, island, time, pointer, delta) {
+  const { paint, mix, oval, clamp } = art;
+  const { paper, ink, pink } = art.colors;
+  const center = island.blobPosition();
+  const core = island.blob.center;
+  const points = blobDrawingPoints(island);
   const bounds = { left: Math.min(...points.map(point => point.x)), right: Math.max(...points.map(point => point.x)), top: Math.min(...points.map(point => point.y)), bottom: Math.max(...points.map(point => point.y)) };
   const gradient = context.createLinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom);
   const rim = context.createLinearGradient(bounds.left, bounds.bottom, bounds.right, bounds.top);
+  const shimmer = island.blob.antic === 'colour-shimmer' && island.blob.anticUntil > time
+    ? Math.sin((time - island.blob.anticStart) / 2500 * Math.PI) * 0.4 : 0;
   art.rainbow.forEach((color, index) => {
-    gradient.addColorStop(index / 6, paint(mix(color, paper, 0.13), 0.44));
+    gradient.addColorStop(index / 6, paint(mix(mix(color, art.rainbow[(index + 2) % 7], shimmer), paper, 0.13), art.refraction ? 0.38 : 0.44));
     rim.addColorStop(index / 6, paint(mix(color, paper, 0.12), 0.78));
   });
+  if (art.refraction) {
+    const image = art.refraction;
+    context.save(); blobPath(context, points); context.clip();
+    context.drawImage(image.canvas, image.x - image.width * 0.03, image.y - image.height * 0.03, image.width * 1.06, image.height * 1.06);
+    context.restore();
+  }
   blobPath(context, points); context.fillStyle = gradient; context.fill();
   context.strokeStyle = rim; context.lineWidth = 2.4; context.stroke();
   context.save(); blobPath(context, points); context.clip();
@@ -146,13 +159,19 @@ export function drawBlob(art, context, island, time, pointer, delta) {
     context.bezierCurveTo(bounds.left + bodyWidth * 0.25, bounds.top + bodyHeight * (index * 0.08 - 0.08), bounds.left + bodyWidth * 0.68, bounds.bottom - bodyHeight * 0.15, bounds.right + 2, bounds.top + bodyHeight * index * 0.11);
     context.stroke();
   });
-  const sheen = context.createRadialGradient(center.x - 12, center.y - 19, 2, center.x, center.y, 47);
+  const light = Math.cos(island.environment.sun.azimuth);
+  const sheen = context.createRadialGradient(center.x + light * 15, center.y - 19, 2, center.x, center.y, 47);
   sheen.addColorStop(0, paint(paper, 0.18)); sheen.addColorStop(0.48, paint(paper, 0));
   sheen.addColorStop(0.85, paint(paper, 0.025)); sheen.addColorStop(1, paint(paper, 0.32));
   context.fillStyle = sheen; context.fillRect(bounds.left - 2, bounds.top - 2, bounds.right - bounds.left + 4, bounds.bottom - bounds.top + 4);
+  blobPath(context, points); context.strokeStyle = paint(paper, 0.12 + (island.blob.wetness || 0) * 0.14); context.lineWidth = 5; context.stroke();
   context.strokeStyle = paint(paper, 0.78); context.lineWidth = 2.2; context.lineCap = 'round';
   context.beginPath(); context.moveTo(center.x - 24, center.y - 6); context.quadraticCurveTo(center.x - 24, center.y - 23, center.x - 9, center.y - 26); context.stroke();
   oval(context, center.x + 18, center.y + 20, 4.5, 1.5, paint(paper, 0.52), -0.5); context.restore();
+  if (island.blob.wetness > 0.3 && core.position.y < island.layout.water - 30) for (let drip = 0; drip < 3; drip += 1) {
+    const age = (time * 0.0014 + drip * 0.37) % 1;
+    oval(context, center.x + Math.sin(drip * 2.3) * 20, bounds.bottom + age * 17, 1.1, 1.8, paint(art.colors.blue, (1 - age) * island.blob.wetness * 0.35));
+  }
   art.faceAngle += (clamp(core.velocity.x * 0.035, -0.30, 0.30) - art.faceAngle) * Math.min(1, delta * 0.009);
   context.save(); context.translate(center.x, center.y + 1); context.rotate(art.faceAngle);
   context.scale(clamp(bodyWidth / 86, 0.80, 1.6), clamp(bodyHeight / 66, 0.78, 1.12));

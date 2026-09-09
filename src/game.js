@@ -5,6 +5,7 @@ import { MAPS } from './maps.js';
 import { IslandScene } from './scene.js';
 import { IslandAudio } from './audio.js';
 import { ExplorationUI } from './exploration-ui.js';
+import { propSound, residentSound } from './sound-context.js';
 
 const canvas = document.getElementById('world');
 const container = document.getElementById('island');
@@ -14,7 +15,7 @@ const keys = new Set();
 const waterPointers = new Set();
 const pointers = new Map();
 const cameras = new Map();
-const state = { paused: false, resize: true, timestamp: 0, accumulator: 0, pointer: null, frames: 0, audioBusy: false, musicBusy: false, mapId: 'lagoon' };
+const state = { paused: false, active: true, resize: true, timestamp: 0, accumulator: 0, pointer: null, frames: 0, audioBusy: false, musicBusy: false, mapId: 'lagoon' };
 const islands = new Map();
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 let island;
@@ -39,7 +40,8 @@ function resizeWorld(preserve = true) {
   if (bounds.width < 1 || bounds.height < 1) return;
   releaseAll();
   const width = WORLD_HEIGHT * bounds.width / bounds.height;
-  const ratio = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(5000000 / (bounds.width * bounds.height)));
+  const ratio = Math.min(window.devicePixelRatio || 1, window.matchMedia('(pointer: coarse)').matches ? 1 : 1.5,
+    Math.sqrt(2000000 / (bounds.width * bounds.height)));
   canvas.width = Math.round(bounds.width * ratio); canvas.height = Math.round(bounds.height * ratio);
   if (!island || !preserve) {
     island?.dispose();
@@ -64,10 +66,12 @@ function updateMapControls() {
 function selectMap(mapId) {
   if (mapId === state.mapId || !MAPS.some(map => map.id === mapId)) return;
   releaseAll();
+  island.sounds.length = 0;
   state.mapId = mapId;
   const bounds = container.getBoundingClientRect();
   const width = WORLD_HEIGHT * bounds.width / bounds.height;
   island = islands.get(mapId) || new IslandPhysics(WORLD_WIDTH, WORLD_HEIGHT, mapId, true);
+  island.sounds.length = 0;
   camera = cameras.get(mapId) || new CoastCamera(WORLD_WIDTH, width);
   if (!cameras.has(mapId)) camera.find(island.spawn.x); else camera.resize(width);
   cameras.set(mapId, camera);
@@ -85,7 +89,7 @@ function pointFromEvent(event) {
 }
 
 function onPointerDown(event) {
-  if (!island || state.paused) return;
+  if (!island || state.paused || !state.active) return;
   if (event.pointerType === 'mouse' && event.button !== 0) return;
   event.preventDefault();
   canvas.focus({ preventScroll: true });
@@ -96,8 +100,10 @@ function onPointerDown(event) {
   pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY, startX: event.clientX, lastX: event.clientX, kind: drag ? 'object' : 'background', panning: false });
   if (drag) {
     if (drag.kind === 'blob') camera.follow = true;
-    const material = { crate: 'wood', raft: 'wood', log: 'wood', driftwood: 'wood', coconut: 'wood', bottle: 'glass', shell: 'shell', conch: 'shell', stone: 'shell', pumice: 'shell', seedpod: 'rustle', swing: 'rustle', bell: 'chime' };
-    canvas.style.cursor = 'grabbing'; audio.play(drag.kind === 'tree' ? 'rustle' : drag.kind === 'creature' ? `voice-${drag.creature.species}` : material[drag.kind] || 'grab', 2, (point.x - camera.x) / camera.viewWidth * 2 - 1);
+    const sound = drag.kind === 'creature' ? { kind: `voice-${drag.creature.species}`, ...residentSound(drag.creature, 'held') } : propSound(drag.kind, drag.body);
+    canvas.style.cursor = 'grabbing';
+    audio.play(sound.kind, 2, (point.x - camera.x) / camera.viewWidth * 2 - 1,
+      { ...sound, distance: Math.abs(point.x - camera.x - camera.viewWidth / 2) });
   } else if (point.x > island.layout.waterStart && point.x < island.layout.waterEnd && point.y > island.layout.water - 35 && point.y < island.layout.bottom) {
     waterPointers.add(event.pointerId); island.splash(point.x, 2.5);
   }
@@ -119,16 +125,27 @@ function onPointerMove(event) {
   state.pointer = point;
   island.move(event.pointerId, point);
   if (waterPointers.has(event.pointerId) && !state.paused) island.splash(point.x, 0.30);
-  if (island.drags.size === 0 && event.pointerType === 'mouse') canvas.style.cursor = island.pick(point, 8) ? 'grab' : 'default';
+  if (island.drags.size === 0 && event.pointerType === 'mouse') canvas.style.cursor = island.pick(point, 8) || island.wildlife?.foraging.sourceAt(point, 8) ? 'grab' : 'default';
 }
 
 function onPointerEnd(event) {
   const drag = island?.drags.get(event.pointerId);
   if (drag?.kind === 'blob' && event.type === 'pointerup') audio.play('release', 2);
-  island?.release(event.pointerId); waterPointers.delete(event.pointerId);
+  island?.release(event.pointerId, event.type !== 'pointerup'); waterPointers.delete(event.pointerId);
   pointers.delete(event.pointerId);
   if (island?.drags.size === 0) canvas.style.cursor = 'default';
   if (event.pointerType !== 'mouse' && island?.drags.size === 0) state.pointer = null;
+}
+
+function syncAudio() {
+  const suspended = state.paused || !state.active || document.hidden;
+  if (suspended && island) island.sounds.length = 0;
+  audio.pause(suspended);
+}
+
+function setActive(active) {
+  state.active = active; state.timestamp = 0; state.accumulator = 0; releaseAll();
+  syncAudio();
 }
 
 function setPaused(paused) {
@@ -136,7 +153,7 @@ function setPaused(paused) {
   const button = document.getElementById('pause');
   button.setAttribute('aria-pressed', String(paused)); button.setAttribute('aria-label', paused ? 'Resume' : 'Pause');
   icon(button, paused ? Play : Pause); document.getElementById('pause-state').hidden = !paused;
-  audio.pause(paused || document.hidden);
+  syncAudio();
   announcer.textContent = paused ? 'Game paused.' : 'Game resumed.';
 }
 
@@ -147,7 +164,7 @@ async function toggleSound() {
   const button = document.getElementById('sound');
   button.setAttribute('aria-pressed', String(enabled)); button.setAttribute('aria-label', enabled ? 'Turn sound off' : 'Turn sound on');
   icon(button, enabled ? Volume2 : VolumeX);
-  audio.pause(state.paused || document.hidden);
+  syncAudio();
   announcer.textContent = enabled ? 'Sound on.' : 'Sound off.';
   state.audioBusy = false;
 }
@@ -158,7 +175,7 @@ async function toggleMusic() {
   try {
     const enabled = await audio.toggleMusic();
     updateMusicControl();
-    audio.pause(state.paused || document.hidden);
+    syncAudio();
     announcer.textContent = enabled ? 'Music on.' : 'Music off.';
   } finally { state.musicBusy = false; }
 }
@@ -170,6 +187,7 @@ function updateMusicControl() {
 }
 
 function reset() {
+  audio.clearEffects();
   resizeWorld(false); setPaused(false); state.pointer = null; audio.play('grab', 2);
   announcer.textContent = 'The island has been reset.';
 }
@@ -179,9 +197,10 @@ function frame(timestamp) {
     if (state.resize) resizeWorld();
     const elapsed = state.timestamp ? Math.min(100, timestamp - state.timestamp) : 0;
     state.timestamp = timestamp;
-    if (!state.paused && !document.hidden) {
+    if (!state.paused && state.active && !document.hidden) {
+      scene.observeFrame(elapsed);
       const bounds = canvas.getBoundingClientRect();
-      const grips = [...pointers.values()].filter(pointer => pointer.kind === 'object').map(pointer => (pointer.clientX - bounds.left) / bounds.width);
+      const grips = [...pointers.entries()].filter(([pointerId, pointer]) => pointer.kind === 'object' && island.drags.has(pointerId)).map(([, pointer]) => (pointer.clientX - bounds.left) / bounds.width);
       const panning = [...pointers.values()].some(pointer => pointer.panning);
       if (!panning) camera.step(island.blobPosition().x, elapsed, grips);
       for (const [pointerId, pointer] of pointers) {
@@ -194,15 +213,26 @@ function frame(timestamp) {
         const vertical = (keys.has('ArrowDown') ? 1 : 0) - (keys.has('ArrowUp') ? 1 : 0);
         if (horizontal || vertical) island.nudge(horizontal, vertical);
         island.step(); state.accumulator -= STEP;
+        for (const [pointerId, pointer] of pointers) if (pointer.kind === 'object' && !island.drags.has(pointerId)) pointer.kind = 'finished';
         for (const splash of island.splashes.splice(0)) {
           scene.addSplash(splash);
         }
         for (const sound of island.sounds.splice(0)) {
           const positionX = sound.x ?? (sound.pan + 1) * island.width / 2;
           const normalized = (positionX - camera.x) / camera.viewWidth;
-          if (normalized >= -0.15 && normalized <= 1.15) audio.play(sound.kind, sound.strength, normalized * 2 - 1);
+          if (normalized >= -0.15 && normalized <= 1.15) audio.play(sound.kind, sound.strength, normalized * 2 - 1,
+            { ...sound, distance: Math.abs(positionX - camera.x - camera.viewWidth / 2) });
         }
       }
+      audio.environment({ mapId: island.map.id,
+        immersion: island.blob.particles.reduce((total, body) => total + (body.plugin.lastImmersion || 0), 0) / island.blob.particles.length,
+        waveEnergy: Math.sqrt(island.waves.reduce((total, wave) => total + wave.offset ** 2 + wave.velocity ** 2 * 8, 0) / island.waves.length) / 8,
+        wind: island.environment?.wind || 0 });
+      audio.syncContacts(island.contactSounds().filter(contact => {
+        const normalized = (contact.x - camera.x) / camera.viewWidth;
+        return normalized >= -0.15 && normalized <= 1.15;
+      }).map(contact => ({ ...contact, pan: (contact.x - camera.x) / camera.viewWidth * 2 - 1,
+        distance: Math.abs(contact.x - camera.x - camera.viewWidth / 2) })));
       const positions = island.blob.ring.map(particle => particle.position.x);
       audio.stretch((Math.max(...positions) - Math.min(...positions)) / 80, [...island.drags.values()].filter(drag => drag.kind === 'blob').length > 1);
     } else state.accumulator = 0;
@@ -267,14 +297,15 @@ try {
     if (event.key.toLowerCase() === 'f') exploration.find();
   });
   window.addEventListener('keyup', event => keys.delete(event.key));
-  window.addEventListener('blur', releaseAll);
+  window.addEventListener('blur', () => setActive(false));
+  window.addEventListener('focus', () => setActive(true));
   window.addEventListener('resize', () => { state.resize = true; });
   new ResizeObserver(() => { state.resize = true; }).observe(container);
   document.addEventListener('visibilitychange', () => {
-    releaseAll(); state.timestamp = 0; state.accumulator = 0; audio.pause(document.hidden || state.paused);
+    releaseAll(); state.timestamp = 0; state.accumulator = 0; syncAudio();
   });
-  window.addEventListener('pagehide', () => { releaseAll(); audio.pause(true); });
-  window.addEventListener('pageshow', () => audio.pause(document.hidden || state.paused));
+  window.addEventListener('pagehide', () => setActive(false));
+  window.addEventListener('pageshow', () => setActive(true));
   const appearance = window.matchMedia('(prefers-color-scheme: dark)');
   appearance.addEventListener('change', event => {
     if (new URLSearchParams(location.search).has('scoutTheme')) return;
@@ -283,7 +314,7 @@ try {
   resizeWorld(false);
   exploration = new ExplorationUI(() => ({ island, camera, scene }), releaseAll, message => { announcer.textContent = message; });
   const favicon = document.createElement('link'); favicon.rel = 'icon'; favicon.href = document.getElementById('brand-mark').toDataURL(); document.head.append(favicon);
-  window.__blobIsland = Object.freeze({ snapshot: () => ({ ...island.snapshot(), version: 3, camera: camera.snapshot(), paused: state.paused, sound: audio.enabled, audioSupported: audio.supported, audioState: audio.context?.state || 'not-created', music: audio.musicEnabled, musicSupported: audio.musicSupported, musicPaused: audio.music.paused, musicTime: audio.music.currentTime, musicError: audio.music.error?.message || null, soundEvents: { ...audio.effectCounts }, activeVoices: audio.activeVoices, frames: state.frames, waterTouches: waterPointers.size, pointerCount: pointers.size, sceneryPixels: scene.background.width * scene.background.height }) });
+  window.__blobIsland = Object.freeze({ snapshot: () => ({ ...island.snapshot(), version: 4, camera: camera.snapshot(), paused: state.paused, sound: audio.enabled, audioSupported: audio.supported, audioState: audio.context?.state || 'not-created', music: audio.musicEnabled, musicSupported: audio.musicSupported, musicPaused: audio.music.paused, musicTime: audio.music.currentTime, musicError: audio.music.error?.message || null, soundEvents: { ...audio.effectCounts }, activeVoices: audio.activeVoices, frames: state.frames, waterTouches: waterPointers.size, pointerCount: pointers.size, sceneryPixels: scene.sceneryPixels, renderQuality: { ...scene.quality }, bubbles: (scene.bubbles || []).map(bubble => ({ ...bubble })), parallax: scene.layers.map(layer => ({ kind: layer.kind, factor: layer.factor, pixels: layer.canvas.width * layer.canvas.height })), audioEnvironment: { ...audio.environmentState } }) });
   requestAnimationFrame(frame);
 } catch (error) {
   showError(error);

@@ -25,7 +25,9 @@ export function drawCreatureBubbles(art, context, island, time, camera) {
     const kind = bubble.kind;
     if (kind === 'ewww') {
       context.font = '700 12px "Segoe UI", sans-serif'; context.textAlign = 'center'; context.textBaseline = 'middle'; context.fillStyle = paint(colors.ink); context.fillText('Ewww!', 0, 0.5);
-    } else if (kind === 'heart') {
+    } else if (kind === 'heart' || kind === 'meal-heart') {
+      const settle = kind === 'meal-heart' && !art.reducedMotion ? 1 + Math.sin(Math.min(1, bubble.age / 500) * Math.PI) * 0.08 : 1;
+      context.scale(bubble.glyphScale * settle, bubble.glyphScale * settle);
       context.beginPath(); context.moveTo(0, 6); context.bezierCurveTo(-12, -1, -6, -10, 0, -4); context.bezierCurveTo(6, -10, 12, -1, 0, 6); context.fillStyle = paint(colors.pink); context.fill();
     } else if (kind === 'coconut') {
       oval(context, 0, 0, 6.2, 6.2, paint(colors.wood));

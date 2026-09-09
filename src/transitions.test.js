@@ -144,3 +144,28 @@ test('a jellyfish caught by a floating ring chooses open water instead of steeri
   assert.equal(island.snapshot().finite, true);
   island.dispose();
 });
+
+test('a jellyfish on a floating raft retains its exit side and returns to water within eight seconds', () => {
+  const island = new IslandPhysics(3200, 900, 'lagoon', true);
+  try {
+    for (let frame = 0; frame < 300; frame += 1) island.step();
+    const raft = island.props.find(prop => prop.kind === 'raft');
+    const jellyfish = island.wildlife.residents.find(resident => resident.species === 'jellyfish');
+    Body.setPosition(jellyfish.body, { x: raft.body.position.x + 1, y: raft.body.bounds.min.y - jellyfish.height * 0.41 - 1 });
+    Body.setVelocity(jellyfish.body, { x: 0, y: 0 });
+    jellyfish.decideAt = 0;
+    const sides = new Set();
+    let returned = false;
+    let previous = { ...jellyfish.body.position };
+    for (let frame = 0; frame < 480; frame += 1) {
+      island.step();
+      if (jellyfish.waterExit) sides.add(jellyfish.waterExit.side);
+      assert.ok(Math.hypot(jellyfish.body.position.x - previous.x, jellyfish.body.position.y - previous.y) < 35);
+      previous = { ...jellyfish.body.position };
+      if (frame > 30 && island.wildlife.inHabitat(jellyfish) && !jellyfish.recovery) { returned = true; break; }
+    }
+    assert.ok(sides.size <= 1, 'The exit side must not oscillate with the floating support');
+    assert.equal(returned, true);
+    assert.equal(jellyfish.frown, false);
+  } finally { island.dispose(); }
+});

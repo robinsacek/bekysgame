@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Body } = require('matter-js');
 const { IslandPhysics } = require('./physics.js');
-const { MOMENTS } = require('./antics.js');
+const { MOMENTS, REPERTOIRE, SIGNATURES, comicPose } = require('./antics.js');
 
 test('each character gets a distinct rare gag on randomized multi-minute timers', () => {
   const island = new IslandPhysics(3200, 900, 'lagoon', true);
@@ -151,4 +151,81 @@ test('comic reactions cannot recursively boost their own timers or overrule a he
   assert.equal(comedy.activity.get(first.id).notices, 0, 'Held participants must not receive contextual triggers');
   assert.ok(comedy.activity.get(second.id).notices > 0, 'The free participant can still react');
   island.release(18); island.dispose();
+});
+
+test('every repertoire varies with bounded history and named signatures are eligible only for their owner', () => {
+  for (const mapId of ['lagoon', 'pools', 'sunset']) {
+    const island = new IslandPhysics(3200, 900, mapId, true);
+    try {
+      const comedy = island.wildlife.comedy;
+      for (const resident of island.wildlife.residents) {
+        assert.ok(REPERTOIRE[resident.species].length >= 4);
+        const draws = [];
+        for (let index = 0; index < 20; index += 1) {
+          island.time += 60000;
+          comedy.perform(resident); comedy.pending.length = 0;
+          const kind = comedy.events.at(-1).kind;
+          assert.equal(draws.slice(-3).includes(kind), false, 'A gag cannot repeat in the last three draws');
+          if (Object.values(SIGNATURES).includes(kind)) assert.equal(SIGNATURES[resident.id], kind);
+          draws.push(kind);
+        }
+        assert.ok(new Set(draws).size >= 4);
+        assert.ok(comedy.history.get(resident.id).length <= 12);
+      }
+    } finally { island.dispose(); }
+  }
+});
+
+test('fidgets require drive conflict and yield to held input and objective activity', () => {
+  const island = new IslandPhysics(3200, 900, 'lagoon', true);
+  try {
+    const resident = island.wildlife.residents.find(item => item.id === 'mango');
+    const comedy = island.wildlife.comedy;
+    island.time = 13000;
+    comedy.fidgets(); assert.equal(resident.fidget, undefined);
+    resident.needs.hunger = 1; resident.foodId = null; resident.state = 'resting'; Body.setVelocity(resident.body, { x: 0, y: 0 });
+    comedy.fidgets(); assert.ok(resident.fidgetUntil > island.time);
+    const count = comedy.fidgetCounts[resident.fidget];
+    island.time += 14000; resident.state = 'foraging'; comedy.fidgets();
+    assert.equal(comedy.fidgetCounts[resident.fidget], count);
+    resident.state = 'resting'; resident.needs.hunger = 0; comedy.fidgets();
+    assert.equal(comedy.fidgetCounts[resident.fidget], count);
+  } finally { island.dispose(); }
+});
+
+test('moments anticipate before physical action and spatial staging defers overlapping starts', () => {
+  const island = new IslandPhysics(3200, 900, 'lagoon', true);
+  try {
+    const comedy = island.wildlife.comedy;
+    const bird = island.wildlife.residents.find(item => item.species === 'bird');
+    comedy.perform(bird);
+    assert.equal(comedy.droppings.length, 0);
+    assert.ok(comicPose('dropping', 0.07).anticipation > 0.9);
+    island.time = 350; comedy.tick();
+    assert.equal(comedy.droppings.length, 1);
+    const resident = island.wildlife.residents.find(item => item.id === 'mango');
+    Body.setPosition(resident.body, { ...bird.body.position });
+    comedy.lastAt = 0; island.time = 1900;
+    comedy.nextAt.set(resident.id, 1800);
+    comedy.tick();
+    assert.equal(comedy.history.has(resident.id), false);
+    assert.ok(comedy.nextAt.get(resident.id) > island.time);
+    assert.equal(Boolean(island.blobHandled), false);
+  } finally { island.dispose(); }
+});
+
+test('a priority change during anticipation cancels physical and audio gag actions', () => {
+  const island = new IslandPhysics(3200, 900, 'lagoon', true);
+  try {
+    const comedy = island.wildlife.comedy;
+    const bird = island.wildlife.residents.find(resident => resident.species === 'bird');
+    comedy.perform(bird);
+    bird.state = 'visiting-flight';
+    island.time = 350;
+    comedy.tick();
+    assert.equal(comedy.droppings.length, 0);
+    assert.equal(island.sounds.length, 0);
+    assert.equal(bird.anticUntil, island.time);
+    assert.equal(comedy.pending.length, 0);
+  } finally { island.dispose(); }
 });

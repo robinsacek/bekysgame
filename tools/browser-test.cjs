@@ -1,14 +1,21 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
+const { buildSync } = require('esbuild');
 const { pathToFileURL } = require('node:url');
 const { chromium, webkit } = require('playwright');
 const { exerciseCoast } = require('./coast-browser.cjs');
+const { installAudioProbe, exerciseAudio } = require('./audio-browser.cjs');
+const { exerciseFeeding } = require('./feeding-browser.cjs');
 
 const root = path.resolve(__dirname, '..');
 const output = path.join(root, 'test-results');
 const localUrl = pathToFileURL(path.join(root, 'index.html')).href;
 const baseUrl = process.env.BLOB_URL || localUrl;
+const features = process.env.BLOB_FEATURES || 'all';
+const stage = (process.env.BLOB_STAGE || 'current').replace(/[^a-z0-9-]/gi, '');
+const sourceSha256 = baseUrl === localUrl ? createHash('sha256').update(fs.readFileSync(path.join(root, 'index.html'))).digest('hex') : null;
 const report = [];
 const snapshot = page => page.evaluate(() => window.__blobIsland.snapshot());
 
@@ -21,18 +28,21 @@ async function layoutAndPixels(page) {
   return page.evaluate(() => {
     const canvas = document.getElementById('world');
     const context = canvas.getContext('2d');
+    canvas.toDataURL();
     const image = context.getImageData(0, 0, canvas.width, canvas.height);
     const colors = new Set();
+    const rgbColors = new Set();
     let signature = 0;
     for (let offset = 0; offset < image.data.length; offset += 4 * 113) {
       colors.add(`${image.data[offset] >> 4},${image.data[offset + 1] >> 4},${image.data[offset + 2] >> 4}`);
       signature = (Math.imul(signature, 31) + image.data[offset] + image.data[offset + 1] * 3) | 0;
     }
+    for (let offset = 0; offset < image.data.length && rgbColors.size <= 512; offset += 4) rgbColors.add(image.data[offset] * 65536 + image.data[offset + 1] * 256 + image.data[offset + 2]);
     const identity = document.querySelector('.identity').getBoundingClientRect();
     const controls = document.querySelector('.controls').getBoundingClientRect();
     const maps = document.querySelector('.map-switcher').getBoundingClientRect();
     const credits = document.querySelector('.music-credit').getBoundingClientRect();
-    return { colors: colors.size, signature, width: innerWidth, height: innerHeight,
+    return { colors: colors.size, rgbColors: rgbColors.size, signature, width: innerWidth, height: innerHeight,
       overflow: document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight,
       headerOverlap: identity.right > controls.left - 3,
       mapOverlap: maps.top < Math.max(identity.bottom, controls.bottom) + 8,
@@ -172,9 +182,13 @@ async function exerciseIslands(page, config) {
   assert.equal((await snapshot(page)).drags, 1, 'The visible palm must accept a touch');
   const shake = { x: crown.x + 150 * scale, y: crown.y + 35 * scale };
   await pointerEvent(page, 'pointermove', 31, shake);
-  await page.waitForFunction(() => window.__blobIsland.snapshot().tree.dropped >= 1);
+  const reaction = await page.waitForFunction(() => {
+    const state = window.__blobIsland.snapshot();
+    return state.tree.dropped >= 1 && Math.abs(state.tree.angle) > 0.035 ? state : false;
+  });
+  const shaken = await reaction.jsonValue();
+  await reaction.dispose();
   await pointerEvent(page, 'pointerup', 31, shake);
-  const shaken = await snapshot(page);
   assert.ok(Math.abs(shaken.tree.angle) > 0.035, 'The palm must visibly react');
   assert.equal(shaken.props.length, shaken.initialProps + shaken.tree.dropped, 'Fallen coconuts must be playable objects');
   await page.screenshot({ path: path.join(output, `${config.name}-palm.png`) });
@@ -242,6 +256,221 @@ async function exerciseIslands(page, config) {
   assert.equal((await snapshot(page)).finite, true);
 }
 
+async function comicGallery(page, config) {
+  const bundle = buildSync({ stdin: { contents: `export { IslandPhysics } from './src/physics.js';
+    export { IslandScene } from './src/scene.js'; export { drawCreature } from './src/creature-art.js';
+    export { drawLocalResident, drawReaction, drawComicEffects } from './src/character-details.js';
+    export { REPERTOIRE, SIGNATURES } from './src/antics.js'; export { blobPath, blobDrawingPoints } from './src/sprites.js';`, resolveDir: root },
+    bundle: true, write: false, format: 'iife', globalName: 'VisualFixture' }).outputFiles[0].text;
+  await page.addScriptTag({ content: bundle });
+  const galleries = await page.evaluate(() => {
+    const results = [];
+    for (const mapId of ['lagoon', 'pools', 'sunset']) {
+      const island = new VisualFixture.IslandPhysics(3200, 900, mapId, true);
+      const canvas = document.createElement('canvas'); canvas.width = 960; canvas.height = 1100;
+      const scene = new VisualFixture.IslandScene(canvas, island);
+      const context = canvas.getContext('2d');
+      for (const [phase, time] of [['anticipation', 175], ['action', 1125], ['reaction', 2250]]) {
+        context.setTransform(1, 0, 0, 1, 0, 0);
+        context.fillStyle = scene.paint(scene.mix(scene.colors.paper, scene.colors.ocean, 0.20)); context.fillRect(0, 0, canvas.width, canvas.height);
+        let cells = 0;
+        for (const [row, resident] of island.wildlife.residents.entries()) {
+          const choices = [...VisualFixture.REPERTOIRE[resident.species], ...(VisualFixture.SIGNATURES[resident.id] ? [VisualFixture.SIGNATURES[resident.id]] : [])];
+          context.font = '13px Segoe UI'; context.fillStyle = scene.paint(scene.colors.ink);
+          context.fillText(`${resident.name} / ${resident.species}`, 12, 20 + row * 108);
+          for (const [column, kind] of choices.entries()) {
+            resident.antic = kind; resident.anticStart = 0; resident.anticUntil = 2500; resident.anticIntensity = 1;
+            resident.body.position = { x: 0, y: 0 }; resident.body.velocity = { x: 0, y: 0 };
+            resident.depth = 0; resident.held = false; resident.facing = 1; resident.direction = 1;
+            resident.lookAt = null; resident.recovery = ''; resident.frown = false; resident.motionPhase = 0;
+            island.wildlife.comedy.events = [{ kind, time: 0, character: resident.id, x: 0, y: 0 }];
+            context.save(); context.translate(95 + column * 185, 59 + row * 108);
+            if (!VisualFixture.drawLocalResident(scene, context, resident, time)) VisualFixture.drawCreature(scene, context, resident, time);
+            VisualFixture.drawReaction(scene, context, resident, time);
+            VisualFixture.drawComicEffects(scene, context, island, time);
+            context.restore();
+            context.font = '11px Segoe UI'; context.fillStyle = scene.paint(scene.colors.ink);
+            context.fillText(kind, 26 + column * 185, 100 + row * 108);
+            cells += 1;
+          }
+        }
+        results.push({ mapId, phase, cells, png: canvas.toDataURL('image/png') });
+      }
+      island.dispose();
+    }
+    return results;
+  });
+  for (const gallery of galleries) {
+    assert.ok(gallery.cells >= 40, 'The gallery must render every existing resident repertoire');
+    fs.writeFileSync(path.join(output, `${stage}-${config.name}-${gallery.mapId}-${gallery.phase}.png`), Buffer.from(gallery.png.split(',')[1], 'base64'));
+  }
+  return galleries.map(({ mapId, phase, cells }) => ({ mapId, phase, cells }));
+}
+
+async function verifyScene(page) {
+  const result = await page.evaluate(() => {
+    const island = new VisualFixture.IslandPhysics(3200, 900, 'lagoon', true);
+    const canvas = document.createElement('canvas'); canvas.width = 1440; canvas.height = 900;
+    const scene = new VisualFixture.IslandScene(canvas, island);
+    const context = canvas.getContext('2d');
+    const camera = { x: 0, viewWidth: 1440 };
+    const sourceOffsets = [];
+    const original = context.drawImage.bind(context);
+    context.drawImage = (...args) => {
+      const layer = scene.layers.find(item => item.canvas === args[0]);
+      if (layer) sourceOffsets.push({ kind: layer.kind, x: args[1] / layer.scale });
+      return original(...args);
+    };
+    scene.quality.refraction = true; scene.lastTime = 1200;
+    scene.draw(island, 1200, null, false, camera);
+    const refracted = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    scene.quality.refraction = false;
+    scene.draw(island, 1200, null, false, camera);
+    const plain = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const mask = document.createElement('canvas'); mask.width = canvas.width; mask.height = canvas.height;
+    const maskContext = mask.getContext('2d');
+    VisualFixture.blobPath(maskContext, VisualFixture.blobDrawingPoints(island));
+    maskContext.fillStyle = 'white'; maskContext.fill(); maskContext.strokeStyle = 'white'; maskContext.lineWidth = 3; maskContext.stroke();
+    const pixels = maskContext.getImageData(0, 0, mask.width, mask.height).data;
+    let inside = 0; let outside = 0;
+    for (let offset = 0; offset < plain.length; offset += 4) {
+      const difference = Math.abs(plain[offset] - refracted[offset]) + Math.abs(plain[offset + 1] - refracted[offset + 1]) + Math.abs(plain[offset + 2] - refracted[offset + 2]);
+      if (difference <= 3) continue;
+      if (pixels[offset + 3]) inside += 1; else outside += 1;
+    }
+    sourceOffsets.length = 0;
+    scene.draw(island, 1200, null, false, { x: 100, viewWidth: 1440 });
+    const parallax = [...sourceOffsets];
+    const renderMs = {};
+    for (const enabled of [true, false]) {
+      scene.quality.refraction = enabled;
+      const costs = [];
+      for (let frame = 0; frame < 20; frame += 1) {
+        const start = performance.now();
+        scene.draw(island, 1200, null, false, camera);
+        context.getImageData(0, 0, 1, 1);
+        costs.push(performance.now() - start);
+      }
+      costs.sort((first, second) => first - second);
+      renderMs[enabled ? 'refraction' : 'plain'] = { p50: costs[10], p95: costs[18] };
+    }
+    scene.quality.caustics = false; scene.quality.parallax = false; scene.quality.refraction = false;
+    scene.draw(island, 1200, null, true, camera);
+    const fallback = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const fallbackColors = new Set();
+    for (let offset = 0; offset < fallback.length; offset += 4 * 113) fallbackColors.add(`${fallback[offset] >> 4},${fallback[offset + 1] >> 4},${fallback[offset + 2] >> 4}`);
+    island.dispose();
+    return { insideChanged: inside, outsideChanged: outside, sceneryPixels: scene.sceneryPixels, scratchPixels: scene.refractionCanvas.width * scene.refractionCanvas.height,
+      parallax, renderMs, fallbackColors: fallbackColors.size, fallbackRefraction: scene.refraction };
+  });
+  fs.writeFileSync(path.join(output, `${stage}-rendering.json`), JSON.stringify(result, null, 2));
+  assert.ok(result.insideChanged > 40, 'Refraction must change actual silhouette pixels');
+  assert.equal(result.outsideChanged, 0, 'Refraction must not leak outside the production silhouette');
+  assert.ok(result.sceneryPixels <= 4500000);
+  assert.ok(result.scratchPixels <= 512 * 512);
+  for (const [index, expected] of [25, 55, 100].entries()) assert.ok(Math.abs(result.parallax[index].x - expected) < 1e-9, 'Parallax must match its factor to sub-pixel precision');
+  assert.ok(result.fallbackColors > 60);
+  assert.equal(result.fallbackRefraction, null);
+  return result;
+}
+
+async function exerciseRhythms(page, config) {
+  await page.clock.install({ time: new Date('2026-09-09T12:00:00Z') });
+  await page.clock.pauseAt(new Date('2026-09-09T12:00:00.100Z'));
+  const cases = [];
+  for (const [mapId, eventTime, kind] of [['lagoon', 24000, 'seedpod-drift'], ['pools', 18000, 'spray-set'], ['sunset', 28000, 'firefly-gust']]) {
+    await page.locator(`[data-map="${mapId}"]`).click({ force: true });
+    await page.locator('#reset').click({ force: true });
+    await page.clock.runFor(1600);
+    const state = await snapshot(page);
+    const overview = page.locator('#coast-overview'); const bounds = await overview.boundingBox();
+    const target = mapId === 'sunset' ? state.width * 0.95 : state.coast.waterStart + 160;
+    await overview.click({ force: true, position: { x: Math.min(bounds.width - 2, target / state.width * bounds.width), y: bounds.height / 2 } });
+    for (let elapsed = 0; elapsed < eventTime + 3000; elapsed += 1000) await page.clock.runFor(1000);
+    const active = await snapshot(page);
+    assert.equal(active.environment.event?.kind, kind, `${mapId}: the signature must arrive on the unmodified simulation clock`);
+    assert.equal(active.environment.eventCounts[kind], 1);
+    assert.equal(active.finite, true);
+    assert.equal(active.creatures.length, 10);
+    assert.ok(active.objectives.entries.every(entry => !entry.complete && entry.progress === 0), 'Environmental rhythms must not earn journal progress');
+    await page.mouse.move(5, config.viewport.height - 8);
+    await page.screenshot({ path: path.join(output, `${stage}-${config.name}-${mapId}-event.png`) });
+    await page.locator('#pause').click({ force: true });
+    const paused = await snapshot(page);
+    await page.clock.runFor(1500);
+    assert.deepEqual((await snapshot(page)).environment, paused.environment, 'Paused environmental clocks and events must freeze');
+    const other = mapId === 'lagoon' ? 'pools' : 'lagoon';
+    await page.locator(`[data-map="${other}"]`).click({ force: true });
+    await page.locator('#pause').click({ force: true });
+    await page.clock.runFor(1200);
+    await page.locator('#pause').click({ force: true });
+    await page.locator(`[data-map="${mapId}"]`).click({ force: true });
+    assert.deepEqual((await snapshot(page)).environment, paused.environment, 'Inactive maps must retain exactly their environmental event state');
+    cases.push({ mapId, event: active.environment.event, wind: active.environment.wind, energy: active.environment.energy, objectiveProgress: 0 });
+    console.log(`PASS ${config.name}/${mapId}: signature event, pixels, pause and inactive-map retention`);
+  }
+  await page.clock.resume();
+  await page.locator('[data-map="lagoon"]').click(); await page.locator('#reset').click();
+  return cases;
+}
+
+async function exerciseVisual(page, config) {
+  const cases = [];
+  for (const mapId of ['lagoon', 'pools', 'sunset']) {
+    await page.locator(`[data-map="${mapId}"]`).click();
+    await page.locator('#reset').click();
+    await page.waitForFunction(() => window.__blobIsland.snapshot().time > 1400);
+    const before = await layoutAndPixels(page);
+    assert.equal(before.overflow, false);
+    assert.equal(before.headerOverlap, false);
+    assert.equal(before.mapsClipped, false);
+    assert.equal(before.creditsClipped, false);
+    assert.ok(before.rgbColors > 256, `The stage shore view must retain actual color detail: ${before.rgbColors} RGB colors`);
+    await page.screenshot({ path: path.join(output, `${stage}-${config.name}-${mapId}-shore.png`) });
+    const observation = await page.evaluate(async () => {
+      const canvas = document.getElementById('world');
+      const context = canvas.getContext('2d');
+      const before = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      const timings = [];
+      let previous;
+      await new Promise(resolve => {
+        const frame = timestamp => {
+          if (previous !== undefined) timings.push(timestamp - previous);
+          previous = timestamp;
+          if (timings.length >= 30) resolve(); else requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      });
+      const after = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let changed = 0;
+      for (let offset = 0; offset < before.length; offset += 4) if (before[offset] !== after[offset] || before[offset + 1] !== after[offset + 1] || before[offset + 2] !== after[offset + 2]) changed += 1;
+      timings.sort((first, second) => first - second);
+      const state = window.__blobIsland.snapshot();
+      return { changedPixels: changed, frameMs: { p50: timings[15], p95: timings[28] }, environment: state.environment, finite: state.finite };
+    });
+    assert.ok(observation.changedPixels > 10);
+    assert.equal(observation.finite, true);
+    const state = await snapshot(page);
+    const overview = page.locator('#coast-overview');
+    const bounds = await overview.boundingBox();
+    await overview.click({ position: { x: state.landmarks.reef.x / state.width * bounds.width, y: bounds.height / 2 } });
+    await frames(page, 8);
+    const reef = await layoutAndPixels(page);
+    assert.ok(reef.rgbColors > 256, `The narrow reef view must retain actual color detail: ${reef.rgbColors} RGB colors`);
+    await page.screenshot({ path: path.join(output, `${stage}-${config.name}-${mapId}-reef.png`) });
+    cases.push({ mapId, ...observation, shoreColors: before.colors, reefColors: reef.colors, reefRgbColors: reef.rgbColors });
+  }
+  await page.locator('[data-map="lagoon"]').click();
+  await page.locator('#reset').click();
+  await frames(page, 5);
+  if (config.name === 'desktop' && ['m5', 'm6', 'v4-final'].includes(stage)) {
+    cases.push({ gallery: await comicGallery(page, config) });
+    if (['m6', 'v4-final'].includes(stage)) cases.push({ rendering: await verifyScene(page) });
+  }
+  if (['m6', 'v4-final'].includes(stage)) cases.push({ rhythms: await exerciseRhythms(page, config) });
+  return cases;
+}
+
 async function run() {
   fs.mkdirSync(output, { recursive: true });
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
@@ -254,7 +483,7 @@ async function run() {
     { name: 'ipad-landscape', engine: 'webkit', viewport: { width: 1180, height: 820 }, touch: true },
     { name: 'ipad-portrait', engine: 'webkit', viewport: { width: 820, height: 1180 }, touch: true },
     { name: 'phone', engine: 'webkit', viewport: { width: 390, height: 844 }, touch: true },
-    { name: 'small-phone', engine: 'webkit', viewport: { width: 320, height: 568 }, touch: true },
+    { name: 'small-phone', engine: 'webkit', viewport: { width: 320, height: 568 }, touch: true, reducedMotion: 'reduce' },
     { name: 'ipad-dark', engine: 'webkit', viewport: { width: 1180, height: 820 }, touch: true, theme: 'dark' },
   ].filter(config => !process.env.BLOB_CASES || process.env.BLOB_CASES.split(',').includes(config.name));
   assert.ok(configurations.length > 0, 'The selector must execute at least one real browser scenario');
@@ -265,13 +494,15 @@ async function run() {
         const errors = [];
         const external = [];
         const browserOffline = baseUrl.startsWith('file:') && engineName === 'chromium';
-        const context = await browser.newContext({ viewport: config.viewport, deviceScaleFactor: 1.5, hasTouch: Boolean(config.touch), isMobile: Boolean(config.touch), colorScheme: config.theme || 'light', offline: browserOffline });
+        const context = await browser.newContext({ viewport: config.viewport, deviceScaleFactor: 1.5, hasTouch: Boolean(config.touch), isMobile: Boolean(config.touch),
+          colorScheme: config.theme || 'light', reducedMotion: config.reducedMotion || 'no-preference', offline: browserOffline });
         await context.route(/^https?:\/\//, route => route.request().resourceType() === 'document' ? route.continue() : route.abort());
         try {
           const page = await context.newPage();
           page.setDefaultTimeout(10000);
           page.on('pageerror', error => errors.push(error.message));
           page.on('request', request => { if (request.resourceType() !== 'document' && /^https?:/.test(request.url())) external.push(request.url()); });
+          if (process.env.BLOB_FEATURES !== 'coast') await installAudioProbe(page);
           await page.goto(`${baseUrl}${baseUrl.includes('?') ? '&' : '?'}scoutTheme=${config.theme || 'light'}`);
           await page.waitForFunction(() => window.__blobIsland?.snapshot().time > 1100);
           const initial = await layoutAndPixels(page);
@@ -282,6 +513,7 @@ async function run() {
           assert.equal(initial.mapsClipped, false, 'Every area button must fit the viewport');
           assert.equal(initial.creditsClipped, false, 'Music attribution must remain visible');
           assert.equal(initial.touchAction, 'none', 'The play surface must own its touch gestures');
+          assert.equal(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches), config.reducedMotion === 'reduce');
           assert.ok(initial.colors > 60, 'The canvas must contain a nonblank, richly colored scene');
           for (const button of initial.buttons) {
             assert.ok(button.width >= 44 && button.height >= 44, 'Touch buttons must be at least 44 pixels');
@@ -289,11 +521,18 @@ async function run() {
           }
           assert.equal((await snapshot(page)).audioState, 'not-created', 'Audio must wait for a user gesture');
           await page.screenshot({ path: path.join(output, `${config.name}.png`) });
-          if (process.env.BLOB_FEATURES !== 'coast') {
+          let audioResult;
+          let visualResult;
+          let feedingResult;
+          if (features === 'visual') visualResult = await exerciseVisual(page, config);
+          else if (features === 'feeding') feedingResult = await exerciseFeeding(page, config, output);
+          else if (process.env.BLOB_FEATURES !== 'coast') {
             await exercise(page, context, config);
-            await exerciseIslands(page, config);
+            if (process.env.BLOB_FEATURES !== 'audio') await exerciseIslands(page, config);
+            audioResult = await exerciseAudio(page, config, output);
           }
-          await exerciseCoast(page, config, output);
+          if (features === 'all') feedingResult = await exerciseFeeding(page, config, output);
+          if (!['audio', 'visual', 'feeding'].includes(features)) await exerciseCoast(page, config, output);
           const animation = await page.evaluate(async () => {
             const canvas = document.getElementById('world');
             const context = canvas.getContext('2d');
@@ -328,15 +567,15 @@ async function run() {
             assert.equal(afterRotation.drags, 0, 'Rotation must release every active touch');
             assert.ok(Math.abs(afterRotation.blob.x / afterRotation.width - beforeRotation.blob.x / beforeRotation.width) < 0.045, 'Rotation must preserve the jelly location');
             await frames(page, 3);
+            await page.screenshot({ path: path.join(output, `${config.name}-rotated.png`) });
             const rotatedLayout = await layoutAndPixels(page);
             assert.equal(rotatedLayout.overflow, false);
             assert.equal(rotatedLayout.headerOverlap, false);
-            assert.ok(rotatedLayout.colors > 60, 'The rotated canvas must remain fully rendered');
-            await page.screenshot({ path: path.join(output, `${config.name}-rotated.png`) });
+            assert.ok(rotatedLayout.colors > 60, `The rotated canvas must remain fully rendered: ${JSON.stringify(rotatedLayout)}`);
           }
           assert.deepEqual(errors, [], 'There must be no JavaScript errors');
           assert.deepEqual(external, [], 'The game must not need external resources');
-          const result = { name: config.name, engine: engineName, passed: true, colors: initial.colors, viewport: config.viewport, input: config.nativeTouch ? 'native multi-touch' : config.touch ? 'WebKit touch pointers and native tap' : 'mouse', networkMode: browserOffline ? 'browser-offline' : 'external-requests-blocked' };
+          const result = { name: config.name, engine: engineName, passed: true, colors: initial.colors, viewport: config.viewport, reducedMotion: config.reducedMotion === 'reduce', input: config.nativeTouch ? 'native multi-touch' : config.touch ? 'WebKit touch pointers and native tap' : 'mouse', networkMode: browserOffline ? 'browser-offline' : 'external-requests-blocked', audio: audioResult, visual: visualResult, feeding: feedingResult };
           report.push(result); console.log(`PASS ${config.name}: ${result.input}, controls, pixels, self-contained assets`);
         } catch (error) {
           const failedPage = context.pages()[0];
@@ -352,9 +591,11 @@ async function run() {
 }
 
 run().then(() => {
-  fs.writeFileSync(path.join(output, 'browser-results.json'), JSON.stringify({ passed: true, source: baseUrl, cases: report }, null, 2));
+  const result = JSON.stringify({ passed: true, features, stage, source: baseUrl, sourceSha256, cases: report }, null, 2);
+  fs.writeFileSync(path.join(output, 'browser-results.json'), result);
+  if (stage !== 'current') fs.writeFileSync(path.join(output, `${stage}-browser-results.json`), result);
   console.log(`All ${report.length} browser scenarios passed.`);
 }).catch(error => {
-  fs.writeFileSync(path.join(output, 'browser-results.json'), JSON.stringify({ passed: false, cases: report, error: error.stack }, null, 2));
+  fs.writeFileSync(path.join(output, 'browser-results.json'), JSON.stringify({ passed: false, features, source: baseUrl, sourceSha256, cases: report, error: error.stack }, null, 2));
   console.error(error); process.exitCode = 1;
 });

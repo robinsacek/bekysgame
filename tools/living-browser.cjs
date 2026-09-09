@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const { chromium, webkit } = require('playwright');
 
@@ -34,6 +35,7 @@ async function seek(page, positionX) {
 async function pixels(page) {
   return page.evaluate(() => {
     const canvas = document.getElementById('world');
+    canvas.toDataURL();
     const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
     const colors = new Set();
     for (let offset = 0; offset < data.length; offset += 4 * 113) colors.add(`${data[offset] >> 4},${data[offset + 1] >> 4},${data[offset + 2] >> 4}`);
@@ -127,8 +129,20 @@ async function expressions(page, engine, map) {
     if (tested.has(original.species) || map !== 'lagoon' && original.species !== special[map]) continue;
     tested.add(original.species);
     const gripOffset = await grabResident(page, original.id);
-    let resident = (await readState(page)).creatures.find(item => item.id === original.id);
+    const heldState = await readState(page);
+    let resident = heldState.creatures.find(item => item.id === original.id);
     const target = { x: resident.x, y: aquatic.has(resident.species) ? initial.water - 115 : initial.ground - 170 };
+    if (aquatic.has(resident.species)) {
+      const margin = resident.width + 50;
+      const candidates = Array.from({ length: 24 }, (_, index) => heldState.coast.toe + margin
+        + index / 23 * (heldState.coast.farToe - heldState.coast.toe - margin * 2))
+        .filter(positionX => heldState.props.every(prop => (prop.depth || 0) > 18 || prop.physicalY > initial.water + resident.height + 50
+          || Math.abs(positionX - prop.x) > (prop.radius || prop.width / 2) + resident.width * 0.5 + 40))
+        .filter(positionX => Math.abs(positionX - heldState.blob.x) > resident.width + heldState.blob.radius + 50)
+        .sort((first, second) => Math.abs(first - resident.x) - Math.abs(second - resident.x));
+      assert.ok(candidates.length, 'The habitat reaction check needs an unobstructed water return');
+      target.x = candidates[0];
+    }
     if (resident.species === 'bird') {
       await carryResident(page, resident.id, { x: initial.landmarks.reef.x, y: 285 }, gripOffset);
       target.x = initial.landmarks.reef.x; target.y = initial.water + 120;
@@ -209,17 +223,66 @@ async function naturalTimeline(page, engine, map) {
   await page.locator('#reset').click({ force: true });
   await page.clock.runFor(34);
   const initial = await readState(page);
+  const mealObservations = new Map(initial.creatures.map(resident => [resident.id, { id: resident.id, species: resident.species, meals: 0,
+    eating: 0, smiling: 0, hearts: 0, minimumOpening: 1, maximumOpening: 0, portions: [] }]));
+  const eatenPortions = new Set();
+  const mealStages = {};
+  const subjectId = map === 'pools' ? 'aster' : map === 'sunset' ? 'clover' : 'fin';
+  const captureMeal = async (state, stage) => {
+    await seek(page, state.creatures.find(resident => resident.id === subjectId).x);
+    const current = await readState(page);
+    const resident = current.creatures.find(item => item.id === subjectId);
+    await page.screenshot({ path: path.join(output, `living-${engine}-${map}-meal-${stage}.png`) });
+    mealStages[stage] = { time: current.time, resident, bubble: current.bubbles.find(bubble => bubble.id === subjectId) || null };
+  };
+  await captureMeal(initial, 'normal');
   const seen = new Set();
   const interactionEvents = new Map();
   const states = new Set();
   const snapshots = [];
+  let progressAt = 60000;
   while ((await readState(page)).time < 435000) {
-    await page.clock.runFor(1500);
+    await page.clock.runFor(250);
     const state = await readState(page);
+    if (state.time >= progressAt) {
+      console.log(`PROGRESS ${engine}/${map}: ${Math.round(state.time / 1000)} simulated seconds`);
+      progressAt += 60000;
+    }
     assert.equal(state.finite, true);
     assert.equal(state.creatures.length, 10, 'No resident may disappear during hunts or comic events');
     assert.ok(state.creatures.every(resident => resident.x >= 18 && resident.x <= 3182 && resident.physicalY >= 100 && resident.physicalY <= 870));
-    for (const resident of state.creatures) states.add(`${resident.species}:${resident.state}`);
+    assert.ok(state.props.filter(prop => prop.kind === 'food').length <= 24, 'Food bodies remain bounded during natural play');
+    for (const resident of state.creatures) {
+      states.add(`${resident.species}:${resident.state}`);
+      const observation = mealObservations.get(resident.id);
+      if (resident.feedingPose.eating) {
+        observation.eating += 1;
+        observation.minimumOpening = Math.min(observation.minimumOpening, resident.feedingPose.open);
+        observation.maximumOpening = Math.max(observation.maximumOpening, resident.feedingPose.open);
+      }
+      observation.smiling += Number(resident.feedingPose.smile > 0.8);
+      observation.hearts += Number(resident.feedingPose.heart);
+      if (resident.meals > observation.meals) {
+        assert.equal(resident.meals, observation.meals + 1, 'A natural meal is credited once');
+        assert.equal(resident.lastMeal.assisted, false, 'The untouched world eats autonomously');
+        assert.equal(eatenPortions.has(resident.lastMeal.portionId), false, 'Two residents cannot consume the same lifecycle');
+        assert.equal(state.props.some(prop => prop.portionId === resident.lastMeal.portionId), false);
+        eatenPortions.add(resident.lastMeal.portionId);
+        observation.portions.push({ ...resident.lastMeal }); observation.meals = resident.meals;
+      }
+    }
+    const subject = state.creatures.find(resident => resident.id === subjectId);
+    if (!mealStages.satisfied && subject.feedingPose.eating && subject.foodPortion !== mealStages.eating?.resident.foodPortion) await captureMeal(state, 'eating');
+    if (!mealStages.satisfied && subject.feedingPose.heart && subject.lastMeal?.portionId === mealStages.eating?.resident.foodPortion) {
+      await captureMeal(state, 'satisfied');
+      assert.equal(mealStages.satisfied.bubble?.kind, 'meal-heart', 'A completed autonomous meal has a visible larger heart');
+      assert.equal(mealStages.satisfied.bubble.glyphScale, 1.5);
+    }
+    if (mealStages.satisfied && !mealStages.reverted && state.time >= mealStages.satisfied.resident.satisfiedUntil) {
+      await captureMeal(state, 'reverted');
+      assert.equal(mealStages.reverted.resident.feedingPose.smile, 0);
+      assert.equal(mealStages.reverted.resident.feedingPose.heart, false);
+    }
     if (state.time < 60000) assert.equal(Object.keys(state.comedy.counts).length, 0, 'The browser must preserve the real randomized one-to-seven-minute event timers');
     for (const event of state.comedy.events) {
       if (event.source === 'interaction') interactionEvents.set(event.id, event);
@@ -235,9 +298,15 @@ async function naturalTimeline(page, engine, map) {
   }
   const final = await readState(page);
   const meals = final.creatures.map(resident => ({ id: resident.id, species: resident.species, meals: resident.meals }));
+  fs.writeFileSync(path.join(output, `living-${engine}-${map}-feeding-observations.json`), JSON.stringify({ source,
+    sourceSha256: source.startsWith('file:') ? createHash('sha256').update(fs.readFileSync(path.join(root, 'index.html'))).digest('hex') : null,
+    simulatedMs: final.time, meals, observations: [...mealObservations.values()], stages: mealStages }, null, 2));
   for (const species of new Set(final.creatures.filter(resident => resident.food).map(resident => resident.species))) {
     assert.ok(meals.some(resident => resident.species === species && resident.meals > 0), `${map}: ${species} must actually find and eat food during natural play`);
+    assert.ok([...mealObservations.values()].some(resident => resident.species === species && resident.eating > 0 && resident.smiling > 0 && resident.hearts > 0
+      && resident.maximumOpening - resident.minimumOpening > 0.3), `${map}: ${species} needs observed autonomous mouth motion and satisfaction`);
   }
+  assert.deepEqual(Object.keys(mealStages), ['normal', 'eating', 'satisfied', 'reverted']);
   const playfulEncounters = ['playful-chase', 'bird-fish-play', 'peekaboo', 'gentle-tingle'].filter(kind => final.encounterCounts[kind] > 0);
   assert.ok(playfulEncounters.length > 0, 'Natural play must include a real cross-species play encounter');
   for (const species of new Set(initial.creatures.map(resident => resident.species))) assert.ok(final.comedy.counts[gags[species]] > 0, `${map}: ${species} must perform its scheduled comic event`);
@@ -249,12 +318,13 @@ async function naturalTimeline(page, engine, map) {
   assert.ok(states.has('fish:fleeing'), 'Prey must visibly flee a pursuit');
   assert.equal(final.objectives.completed, 0, 'An untouched living world must not claim player objectives');
   assert.ok(final.comedy.events.length <= 16 && final.comedy.droppings.length <= 2);
-  return { simulatedMs: final.time, meals, playfulEncounters, counts: final.comedy.counts, encounters: final.encounterCounts, interactionEvents: [...interactionEvents.values()], states: [...states], snapshots };
+  return { simulatedMs: final.time, meals, mealObservations: [...mealObservations.values()], mealStages, playfulEncounters, counts: final.comedy.counts, encounters: final.encounterCounts, interactionEvents: [...interactionEvents.values()], states: [...states], snapshots };
 }
 
 async function run() {
   fs.mkdirSync(output, { recursive: true });
-  const report = { source, passed: false, cases: [] };
+  const localUrl = pathToFileURL(path.join(root, 'index.html')).href;
+  const report = { source, sourceSha256: source === localUrl ? createHash('sha256').update(fs.readFileSync(path.join(root, 'index.html'))).digest('hex') : null, passed: false, cases: [] };
   const engines = ['chromium', 'webkit'].filter(engine => !process.env.BLOB_LIVING_ENGINES || process.env.BLOB_LIVING_ENGINES.split(',').includes(engine));
   const maps = ['lagoon', 'pools', 'sunset'].filter(map => !process.env.BLOB_LIVING_MAPS || process.env.BLOB_LIVING_MAPS.split(',').includes(map));
   assert.ok(engines.length && maps.length, 'Living-world selectors must run real browser cases');
@@ -276,6 +346,7 @@ async function run() {
             await page.locator('#reset').click({ force: true });
             await page.clock.runFor(1600);
             assert.ok((await readState(page)).creatures.some(resident => resident.species === special[map]));
+            console.log(`START ${engine}/${map}: manipulation, recovery, discoveries, and natural timeline`);
             const shape = map === 'lagoon' ? await shaping(page) : null;
             const reactions = await expressions(page, engine, map);
             const discoveries = await mapDiscoveries(page, engine, map);
