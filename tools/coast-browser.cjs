@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const stateOf = page => page.evaluate(() => window.__blobIsland.snapshot());
 const screenPoint = (state, view, point) => ({ x: (point.x - state.camera.x) / state.camera.width * view.width, y: point.y / state.height * view.height });
@@ -131,27 +132,50 @@ async function exerciseCoast(page, config, output) {
     const swimming = await stateOf(page);
     await pointer(page, 'pointerdown', screenPoint(swimming, config.viewport, swimming.blob));
     assert.equal((await stateOf(page)).grips[0]?.kind, 'blob');
+    const guidance = [];
     try {
-      for (const species of ['jellyfish', 'fish', 'octopus', 'shark', 'jellyfish', 'fish']) {
+      for (const species of ['jellyfish', 'fish', 'octopus', 'shark']) {
         if ((await stateOf(page)).objectives.entries[3].complete) break;
-        await page.evaluate(species => new Promise(resolve => {
-          let count = 0;
+        guidance.push(await page.evaluate(species => new Promise(resolve => {
+          const initial = window.__blobIsland.snapshot();
+          const first = initial.creatures.find(item => item.species === species);
+          const offset = first.x > initial.blob.x ? -95 : 95;
+          const target = { x: initial.blob.x, y: initial.blob.y };
+          const observations = [];
+          const encounters = new Map();
+          let previousTime = initial.time;
+          let sampledAt = initial.time - 250;
           const move = () => {
             const state = window.__blobIsland.snapshot();
             const resident = state.creatures.find(item => item.species === species);
             const canvas = document.getElementById('world');
             const bounds = canvas.getBoundingClientRect();
-            const positionX = resident.x + (resident.x > state.landmarks.reef.x ? -65 : 65);
+            const destination = { x: Math.max(state.coast.waterStart + 65, Math.min(state.coast.waterEnd - 65, resident.x + offset)), y: Math.max(state.water + 75, resident.y - 25) };
+            const travel = Math.hypot(destination.x - target.x, destination.y - target.y);
+            const maximumStep = 2.1 * Math.min(2, Math.max(0, (state.time - previousTime) / (1000 / 60)));
+            const fraction = travel ? Math.min(1, maximumStep / travel) : 0;
+            target.x += (destination.x - target.x) * fraction;
+            target.y += (destination.y - target.y) * fraction;
+            previousTime = state.time;
             canvas.dispatchEvent(new PointerEvent('pointermove', { pointerId: 81, pointerType: 'touch', bubbles: true, button: 0, buttons: 1,
-              clientX: bounds.left + Math.max(14, Math.min(bounds.width - 14, (positionX - state.camera.x) / state.camera.width * bounds.width)),
-              clientY: bounds.top + resident.y / state.height * bounds.height }));
-            count += 1;
-            if (count >= 400 || state.objectives.entries[3].complete) resolve(); else requestAnimationFrame(move);
+              clientX: bounds.left + Math.max(14, Math.min(bounds.width - 14, (target.x - state.camera.x) / state.camera.width * bounds.width)),
+              clientY: bounds.top + target.y / state.height * bounds.height }));
+            for (const encounter of state.encounters) if (encounter.time >= initial.time && encounter.second === 'blob') encounters.set(encounter.id, encounter);
+            if (state.time - sampledAt >= 250) {
+              observations.push({ time: state.time, distance: Math.hypot(state.blob.x - resident.x, state.blob.y - resident.y), speed: Math.hypot(state.blob.velocity.x, state.blob.velocity.y), residentState: resident.state, progress: state.objectives.entries[3].progress });
+              sampledAt = state.time;
+            }
+            if (state.time - initial.time >= 14500 || state.objectives.entries[3].progress > initial.objectives.entries[3].progress) {
+              resolve({ species, startedAt: initial.time, elapsed: state.time - initial.time, progressBefore: initial.objectives.entries[3].progress, progressAfter: state.objectives.entries[3].progress, observations, encounters: [...encounters.values()] });
+            } else requestAnimationFrame(move);
           };
           requestAnimationFrame(move);
-        }), species);
+        }), species));
       }
-    } finally { await pointer(page, 'pointerup', { x: 0, y: 0 }); }
+    } finally {
+      await pointer(page, 'pointerup', { x: 0, y: 0 });
+      fs.writeFileSync(path.join(output, `${config.name}-reef-guidance.json`), JSON.stringify({ source: page.url(), guidance }, null, 2));
+    }
     assert.equal((await stateOf(page)).objectives.completed, 4, 'Actual player-guided reef encounters must complete the fourth objective');
     await page.screenshot({ path: path.join(output, `${config.name}-reef-friends.png`) });
   }
