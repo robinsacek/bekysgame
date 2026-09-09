@@ -83,7 +83,7 @@ export class IslandScene {
       const context = canvas.getContext('2d', { alpha: layer.kind !== 'far' }); context.scale(layer.scale, layer.scale);
       this.drawBackground(context, island, layer.kind);
       if (layer.kind === 'near') { drawTerrainDetails(this, context, island); drawMapHabitat(this, context, island); drawHabitats(this, context, island); }
-      return { ...layer, canvas };
+      return this.freezeCanvasCache({ ...layer, canvas });
     });
     this.background = this.layers[2].canvas; this.cacheScale = this.layers[2].scale;
     this.sceneryPixels = this.layers.reduce((total, layer) => total + layer.canvas.width * layer.canvas.height, 0)
@@ -118,6 +118,19 @@ export class IslandScene {
         for (let index = 0; index < 5; index += 1) this.leaf(context, 21, 23, 18, 8, index * 1.2, paint(leaf));
       }
     }
+  }
+
+  freezeCanvasCache(entry) {
+    const canvas = entry.canvas;
+    const image = new Image();
+    image.onload = () => {
+      entry.canvas = image;
+      if (this.background === canvas) this.background = image;
+      canvas.width = 1; canvas.height = 1;
+      image.onload = null;
+    };
+    image.src = canvas.toDataURL();
+    return entry;
   }
 
   cloud(context, positionX, positionY, size, opacity) {
@@ -170,7 +183,7 @@ export class IslandScene {
     const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
     const context = canvas.getContext('2d'); context.translate(-left, -top);
     this.frond(context, targetX, targetY, color);
-    const sprite = { canvas, left, top, width, height }; this.frondSprites.set(key, sprite);
+    const sprite = this.freezeCanvasCache({ canvas, left, top, width, height }); this.frondSprites.set(key, sprite);
     return sprite;
   }
 

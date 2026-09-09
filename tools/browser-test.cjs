@@ -308,10 +308,31 @@ async function comicGallery(page, config) {
 }
 
 async function verifyScene(page) {
-  const result = await page.evaluate(() => {
+  const result = await page.evaluate(async () => {
     const island = new VisualFixture.IslandPhysics(3200, 900, 'lagoon', true);
     const canvas = document.createElement('canvas'); canvas.width = 1440; canvas.height = 900;
     const scene = new VisualFixture.IslandScene(canvas, island);
+    const caches = [...scene.layers, ...scene.frondSprites.values()].map(entry => ({ entry, original: entry.canvas,
+      width: entry.canvas.width, height: entry.canvas.height, pixels: entry.canvas.getContext('2d').getImageData(0, 0, entry.canvas.width, entry.canvas.height).data }));
+    await new Promise((resolve, reject) => {
+      const started = performance.now();
+      const decoded = () => {
+        if (caches.every(cache => cache.entry.canvas instanceof HTMLImageElement)) resolve();
+        else if (performance.now() - started > 5000) reject(new Error('Static scenery caches did not decode'));
+        else requestAnimationFrame(decoded);
+      };
+      decoded();
+    });
+    let cachePixelDifference = 0;
+    let releasedCanvases = 0;
+    for (const cache of caches) {
+      const inspection = document.createElement('canvas'); inspection.width = cache.width; inspection.height = cache.height;
+      const drawing = inspection.getContext('2d'); drawing.drawImage(cache.entry.canvas, 0, 0);
+      const pixels = drawing.getImageData(0, 0, inspection.width, inspection.height).data;
+      for (let offset = 0; offset < pixels.length; offset += 1) cachePixelDifference = Math.max(cachePixelDifference, Math.abs(pixels[offset] - cache.pixels[offset]));
+      releasedCanvases += Number(cache.original.width === 1 && cache.original.height === 1);
+      inspection.width = 1; inspection.height = 1;
+    }
     const context = canvas.getContext('2d');
     const camera = { x: 0, viewWidth: 1440 };
     const sourceOffsets = [];
@@ -361,12 +382,15 @@ async function verifyScene(page) {
     for (let offset = 0; offset < fallback.length; offset += 4 * 113) fallbackColors.add(`${fallback[offset] >> 4},${fallback[offset + 1] >> 4},${fallback[offset + 2] >> 4}`);
     island.dispose();
     return { insideChanged: inside, outsideChanged: outside, sceneryPixels: scene.sceneryPixels, scratchPixels: scene.refractionCanvas.width * scene.refractionCanvas.height,
-      parallax, renderMs, fallbackColors: fallbackColors.size, fallbackRefraction: scene.refraction };
+      parallax, renderMs, fallbackColors: fallbackColors.size, fallbackRefraction: scene.refraction,
+      cacheCount: caches.length, cachePixelDifference, releasedCanvases };
   });
   fs.writeFileSync(path.join(output, `${stage}-rendering.json`), JSON.stringify(result, null, 2));
   assert.ok(result.insideChanged > 40, 'Refraction must change actual silhouette pixels');
   assert.equal(result.outsideChanged, 0, 'Refraction must not leak outside the production silhouette');
   assert.ok(result.sceneryPixels <= 4500000);
+  assert.equal(result.cachePixelDifference, 0, 'Immutable scenery images must preserve the original cached pixels exactly');
+  assert.equal(result.releasedCanvases, result.cacheCount, 'Decoded images release every replaced canvas backing store');
   assert.ok(result.scratchPixels <= 512 * 512);
   for (const [index, expected] of [25, 55, 100].entries()) assert.ok(Math.abs(result.parallax[index].x - expected) < 1e-9, 'Parallax must match its factor to sub-pixel precision');
   assert.ok(result.fallbackColors > 60);
