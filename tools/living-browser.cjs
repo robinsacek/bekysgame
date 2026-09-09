@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const { chromium, webkit } = require('playwright');
 
@@ -34,6 +35,7 @@ async function seek(page, positionX) {
 async function pixels(page) {
   return page.evaluate(() => {
     const canvas = document.getElementById('world');
+    canvas.toDataURL();
     const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
     const colors = new Set();
     for (let offset = 0; offset < data.length; offset += 4 * 113) colors.add(`${data[offset] >> 4},${data[offset + 1] >> 4},${data[offset + 2] >> 4}`);
@@ -213,9 +215,14 @@ async function naturalTimeline(page, engine, map) {
   const interactionEvents = new Map();
   const states = new Set();
   const snapshots = [];
+  let progressAt = 60000;
   while ((await readState(page)).time < 435000) {
     await page.clock.runFor(1500);
     const state = await readState(page);
+    if (state.time >= progressAt) {
+      console.log(`PROGRESS ${engine}/${map}: ${Math.round(state.time / 1000)} simulated seconds`);
+      progressAt += 60000;
+    }
     assert.equal(state.finite, true);
     assert.equal(state.creatures.length, 10, 'No resident may disappear during hunts or comic events');
     assert.ok(state.creatures.every(resident => resident.x >= 18 && resident.x <= 3182 && resident.physicalY >= 100 && resident.physicalY <= 870));
@@ -254,7 +261,8 @@ async function naturalTimeline(page, engine, map) {
 
 async function run() {
   fs.mkdirSync(output, { recursive: true });
-  const report = { source, passed: false, cases: [] };
+  const localUrl = pathToFileURL(path.join(root, 'index.html')).href;
+  const report = { source, sourceSha256: source === localUrl ? createHash('sha256').update(fs.readFileSync(path.join(root, 'index.html'))).digest('hex') : null, passed: false, cases: [] };
   const engines = ['chromium', 'webkit'].filter(engine => !process.env.BLOB_LIVING_ENGINES || process.env.BLOB_LIVING_ENGINES.split(',').includes(engine));
   const maps = ['lagoon', 'pools', 'sunset'].filter(map => !process.env.BLOB_LIVING_MAPS || process.env.BLOB_LIVING_MAPS.split(',').includes(map));
   assert.ok(engines.length && maps.length, 'Living-world selectors must run real browser cases');
@@ -276,6 +284,7 @@ async function run() {
             await page.locator('#reset').click({ force: true });
             await page.clock.runFor(1600);
             assert.ok((await readState(page)).creatures.some(resident => resident.species === special[map]));
+            console.log(`START ${engine}/${map}: manipulation, recovery, discoveries, and natural timeline`);
             const shape = map === 'lagoon' ? await shaping(page) : null;
             const reactions = await expressions(page, engine, map);
             const discoveries = await mapDiscoveries(page, engine, map);

@@ -6,6 +6,8 @@ const { Wildlife } = require('./wildlife.js');
 const { CoastObjectives } = require('./objectives.js');
 const { blobbyOutline } = require('./blobby-shape.js');
 const { setBodyDepth, advanceDepth } = require('./depth-space.js');
+const { propSound } = require('./sound-context.js');
+const { IslandEnvironment } = require('./environment.js');
 
 const { Engine, Bodies, Body, Composite, Constraint, Vector, Vertices, Events } = Matter;
 const STEP = 1000 / 60;
@@ -67,6 +69,7 @@ class IslandPhysics {
       for (const fruit of this.tree.fruits) setBodyDepth(fruit.body, 0);
       buildCoast(this); this.wildlife = new Wildlife(this); this.objectives = new CoastObjectives(this);
     }
+    this.environment = new IslandEnvironment(this);
     this.initialPropCount = this.props.length;
     Events.on(this.engine, 'collisionStart', event => {
       for (const pair of event.pairs) {
@@ -79,9 +82,16 @@ class IslandPhysics {
         const relative = Vector.sub(first.velocity, second.velocity);
         const speed = Math.abs(Vector.dot(relative, pair.collision.normal));
         if (speed < 3 || Math.max(first.plugin.lastImmersion || 0, second.plugin.lastImmersion || 0) > 0.5) continue;
-        const labels = [first.label, second.label];
-        const kind = labels.includes('jelly') || labels.includes('ball') ? 'bounce' : labels.includes('bottle') ? 'glass' : labels.includes('shell') ? 'shell' : 'wood';
-        this.queueSound(kind, Math.min(7, speed), (first.position.x + second.position.x) / 2);
+        const bodies = [first, second];
+        const source = bodies.find(body => ['jelly', 'ball'].includes(body.label))
+          || bodies.find(body => body.label === 'bottle')
+          || bodies.find(body => ['shell', 'conch', 'stone', 'pumice'].includes(body.label))
+          || (first.isStatic ? second : first);
+        const sound = propSound(source.label, source, 'impact', speed);
+        if (source.label !== 'jelly') pair.restitution /= 1 + speed * 0.035;
+        this.queueSound(sound.kind, Math.min(7, speed), source.position.x, sound);
+        const depth = source.label === 'jelly' ? this.blob.depth : this.props.find(prop => prop.body === source)?.depth || 0;
+        this.environment.impact(source.position.x, source.bounds.max.y + depth, speed);
       }
     });
   }
@@ -228,11 +238,14 @@ class IslandPhysics {
       if (fraction > 0) Body.applyForce(body, point, { x: 0, y: -body.mass * this.engine.gravity.scale / density * fraction / samples });
     }
     if (submerged > 0) {
+      const held = [...this.drags.values()].some(drag => drag.body === body || body.label === 'jelly' && drag.kind === 'blob');
+      const current = held ? 0 : this.environment?.currentAt(body.position.x, body.position.y) || 0;
       Body.applyForce(body, body.position, {
-        x: -body.velocity.x * body.mass * 0.00022 * submerged,
+        x: (current - body.velocity.x) * body.mass * 0.00022 * submerged,
         y: -body.velocity.y * body.mass * 0.00026 * submerged,
       });
       Body.setAngularVelocity(body, body.angularVelocity * (1 - 0.04 * submerged));
+      if (!held) this.wake(body, submerged, current);
     }
     const previous = body.plugin.lastImmersion || 0;
     if (body.bounds.max.y < this.surfaceAt(body.position.x) - 12) body.plugin.splashReady = true;
@@ -248,6 +261,16 @@ class IslandPhysics {
     return submerged;
   }
 
+  wake(body, immersion, current = 0) {
+    const relativeSpeed = body.velocity.x - current;
+    const end = this.layout.waterEnd || this.width;
+    if (immersion < 0.05 || Math.abs(relativeSpeed) < 0.1 || body.position.x <= this.layout.waterStart || body.position.x >= end) return;
+    const index = clamp(Math.round((body.position.x - this.layout.waterStart) / (end - this.layout.waterStart) * (this.waves.length - 1)), 1, this.waves.length - 2);
+    const strength = clamp(relativeSpeed * immersion * Math.min(1, body.mass) * 0.006, -0.045, 0.045);
+    this.waves[index - 1].velocity += strength;
+    this.waves[index + 1].velocity -= strength;
+  }
+
   splash(positionX, strength) {
     const waterEnd = this.layout.waterEnd || this.width;
     if (positionX < this.layout.waterStart || positionX > waterEnd) return;
@@ -260,11 +283,11 @@ class IslandPhysics {
     if (strength > 0.9) this.queueSound('splash', strength, positionX);
   }
 
-  queueSound(kind, strength = 1, positionX = this.width / 2) {
+  queueSound(kind, strength = 1, positionX = this.width / 2, context = {}) {
     const cooldown = kind === 'rustle' ? 550 : kind === 'splash' ? 220 : 180;
     if (this.time - (this.soundTimes.get(kind) ?? -Infinity) < cooldown) return;
     this.soundTimes.set(kind, this.time);
-    if (this.sounds.length < 20) this.sounds.push({ kind, strength, x: positionX, pan: clamp(positionX / this.width * 2 - 1, -0.8, 0.8), time: this.time });
+    if (this.sounds.length < 20) this.sounds.push({ ...context, kind, strength, x: positionX, pan: clamp(positionX / this.width * 2 - 1, -0.8, 0.8), time: this.time });
   }
 
   skipStone(prop) {
@@ -391,6 +414,7 @@ class IslandPhysics {
 
   step() {
     this.time += STEP;
+    this.environment.step(STEP);
     this.updateDepth();
     for (const drag of this.drags.values()) {
       const target = { x: drag.target.x, y: drag.target.y - this.dragDepth(drag) };
@@ -404,9 +428,14 @@ class IslandPhysics {
     this.tree.step();
     this.wildlife?.step();
     for (const particle of this.blob.particles) this.floatBody(particle, 0.87, particle.circleRadius);
+    const wet = this.blob.particles.some(particle => particle.plugin.lastImmersion > 0.2);
+    this.blob.wetness = (this.blob.wetness || 0) + ((wet ? 1 : 0) - (this.blob.wetness || 0)) * (wet ? 0.12 : 0.008);
     for (const prop of this.props) {
       this.skipStone(prop);
       prop.submerged = this.floatBody(prop.body, prop.density, prop.radius, prop.width, prop.height);
+      if (prop.ropes && ![...this.drags.values()].some(drag => drag.body === prop.body)) {
+        Body.applyForce(prop.body, prop.body.position, { x: prop.body.mass * this.environment.wind * 0.000018, y: 0 });
+      }
       if (prop.kind === 'bell' && prop.playerHandled && Vector.magnitude(prop.body.velocity) > 1.1 && this.time - (prop.chimedAt || -10000) > 1100) {
         this.queueSound('chime', 1.5, prop.body.position.x); prop.chimedAt = this.time;
       }
@@ -419,6 +448,7 @@ class IslandPhysics {
       }
     }
     Engine.update(this.engine, STEP);
+    this.dampContacts();
     this.wildlife?.afterStep();
     this.objectives?.step();
     for (const body of [...this.blob.particles, ...this.props.map(prop => prop.body)]) {
@@ -430,16 +460,55 @@ class IslandPhysics {
       const wave = this.waves[index];
       const left = this.waves[Math.max(0, index - 1)].offset;
       const right = this.waves[Math.min(this.waves.length - 1, index + 1)].offset;
-      wave.velocity += -wave.offset * 0.024 + (left + right - 2 * wave.offset) * 0.14;
-      wave.velocity *= 0.957;
+      wave.velocity += (this.environment.swellAt(index) - wave.offset) * 0.024 + (left + right - 2 * wave.offset) * 0.14;
+      wave.velocity *= this.environment.profile.retention;
     }
     for (const wave of this.waves) wave.offset = clamp(wave.offset + wave.velocity, -18, 18);
+    this.environment.updateShoreline(STEP);
+    for (const contact of this.contactSounds()) {
+      const prop = this.props.find(item => item.body.id === contact.contactId);
+      this.environment.mark(contact.x, prop.depth || 0);
+    }
+  }
+
+  dampContacts() {
+    const processed = new Set();
+    for (const pair of this.engine.pairs.list) {
+      if (!pair.isActive || pair.isSensor) continue;
+      const bodies = [pair.bodyA.parent, pair.bodyB.parent];
+      if (!bodies.some(body => body.isStatic)) continue;
+      const prop = this.props.find(item => bodies.includes(item.body));
+      if (!prop || prop.submerged > 0.25 || processed.has(prop.body.id)) continue;
+      processed.add(prop.body.id);
+      const index = clamp(Math.round(prop.body.position.x / 12), 0, this.environment.shoreline.length - 1);
+      prop.body.plugin.dryFriction ??= prop.body.friction;
+      prop.body.friction = prop.body.plugin.dryFriction + this.environment.shoreline[index].wetness * 0.06;
+      if (prop.radius) Body.setAngularVelocity(prop.body, prop.body.angularVelocity * 0.985);
+    }
+  }
+
+  contactSounds() {
+    const contacts = new Map();
+    for (const pair of this.engine.pairs.list) {
+      if (!pair.isActive || pair.isSensor) continue;
+      const bodies = [pair.bodyA.parent, pair.bodyB.parent];
+      if (!bodies.some(body => body.isStatic)) continue;
+      const prop = this.props.find(item => item.playerHandled && bodies.includes(item.body));
+      if (!prop || prop.submerged > 0.25) continue;
+      const normal = pair.collision.normal;
+      const speed = Math.abs(-normal.y * prop.body.velocity.x + normal.x * prop.body.velocity.y);
+      if (speed < 0.22) continue;
+      const kind = prop.radius && Math.abs(prop.body.angularVelocity) * prop.radius > 0.1 ? 'rolling' : 'scraping';
+      contacts.set(prop.body.id, { ...propSound(prop.kind, prop.body, kind, speed), kind, contactId: prop.body.id, x: prop.body.position.x, speed });
+    }
+    return [...contacts.values()].sort((first, second) => second.speed - first.speed).slice(0, 2);
   }
 
   snapshot() {
     const center = this.blobPosition();
     return {
       width: this.width, height: this.height, time: this.time, water: this.layout.water, ground: this.layout.ground,
+      environment: this.environment.snapshot(),
       map: this.map.id, initialProps: this.initialPropCount, spawn: this.spawn, landmarks: this.landmarks,
       coast: { shore: this.layout.shore, toe: this.layout.toe, farToe: this.layout.farToe, farShore: this.layout.farShore, waterStart: this.layout.waterStart, waterEnd: this.layout.waterEnd, bank: this.map.coast.bank },
       blob: { ...center, y: center.y + this.blob.depth, physicalY: center.y, depth: this.blob.depth, name: 'Blobby', radius: this.blob.radius, area: Vertices.area(this.blob.ring.map(body => body.position)), velocity: { ...this.blob.center.velocity }, particles: this.blob.ring.map(body => ({ x: body.position.x, y: body.position.y + this.blob.depth })) },

@@ -81,7 +81,7 @@ class Foraging {
     resident.feedingSince ??= time;
     if (time - resident.feedingSince >= 1500) {
       resident.meals += 1; patch.visits += 1; patch.readyAt = time + 16000 + this.wildlife.random() * 16000;
-      resident.foodAt = time + 16000 + this.wildlife.random() * 20000; resident.foodId = null; resident.feedingSince = null;
+      resident.foodAt = time + (16000 + this.wildlife.random() * 20000) * (1.05 - (resident.traits?.greedy || 0) * 0.15); resident.foodId = null; resident.feedingSince = null;
       this.wildlife.meet('food-found', resident, { id: patch.id }); this.wildlife.say(resident);
       if (resident.species === 'bird') {
         const crown = this.island.tree.crown();

@@ -2,7 +2,7 @@
 
 A small translucent rainbow character named **Blobby**, exploring three living tropical coastlines. A touch-friendly physics playground with elastic stretching, autonomous residents, deep water, optional objectives, and situational comedy. No countdown, damage, losing, or unlocks.
 
-## Version 3: Living Coastlines
+## Living Coastlines
 
 - Each map is a bounded 3200 by 900 world, wider than a screen, with a real far shore, curved banks, uneven physical seabed, textured sand, reef gardens, and map-specific vegetation and lighting.
 - Blobby's resting silhouette matches the logo. Two or three independent grips stretch, squeeze, and reshape its moderately translucent body. Releasing restores elasticity; it cannot tear.
@@ -28,6 +28,18 @@ The physical layouts differ too: Lagoon has the broadest open-water basin, Tide 
 
 All areas retain the four optional objectives and shared essentials, but differ in terrain, usable beach depth, current, rest and flight behavior, resident variants, and physical discoveries. Decorative distant scenery and rock crevices are not additional collision platforms; Tide Pools' usable terraces are part of the shared shoreline geometry.
 
+## Version 4: Weather, Character, and Sound
+
+- Shared seeded wind moves foliage and grass, influences unobstructed bird flight and suspended toys, and shapes quiet map ambience. Sun direction controls layered contact shadows and subtle highlights. Three bounded parallax layers separate sky, distant scenery, and the playable coast.
+- Existing wave-sampled buoyancy now has shared depth-dependent current, symmetric movement wakes, and sheltered Lagoon, choppy Pools, and long-period Sunset swell. Shoreline foam, drying wet sand, fading drag marks, and bounded impact particles share the physical surface. Water level stays fixed.
+- Residents have stable individual traits, bounded energy/needs, decaying pair affinity, thirty-second fright-location memory, and attention cues. Ordinary movement and rests reflect fatigue; held input, recovery, and objective visits retain priority. Fish align and cohere as well as separate, and rabbit hops have an anticipation crouch.
+- Every species has four contextual comic options, with eight additional named signatures and a six-action Blobby repertoire. A three-draw non-repetition history, anticipation before action, spatial staging, and non-recursive witness reactions keep comedy readable. Short fidgets require drive conflict and have their own bounded cooldowns.
+- Little Lagoon has a seedpod-drift and fish-flash rhythm; Tide Pools has a non-flooding chop/spray set; Sunset Cove has fireflies, a chime gust, and distant birds. These are decorative environmental events, not new catchable residents or additional colliders. Existing inhabitants and physical toys remain.
+- Material impacts use mass- and speed-dependent resonance; rolling/scraping loops require real player-handled contacts and stop at rest. Splash bubbles, individual/state-shaped voices, quiet gait/feeding sounds, camera-distance mixing, short procedural map reverbs, and an underwater effects filter remain separate from music. Both controls start off, and pause/inactivity interrupts sound ownership correctly.
+- Blobby transmits a small pre-character scene capture inside its silhouette where the rendering budget allows, with a wet sheen and drips. Refraction is disabled on small/wide or reduced-motion views; all fallback paths retain the rainbow character. This is a stylized approximation, not a physical optical or fluid solver.
+
+The prioritized scope and verification record are in [DESIGN-V4.md](DESIGN-V4.md). Moving tides, additional species, engine replacement, and experimental soft-mesh self-collision remain deferred. The live canvas is capped at two million pixels; scenery caches stay below 4.5 million and refraction scratch below 512 by 512. Desktop/tablet frame-rate targets still require representative physical-device measurements; browser emulation is not a hardware certification. This local V4 build has not been published to Pages.
+
 ## Play
 
 The GitHub Pages destination is **https://robinsacek.github.io/bekysgame/**.
@@ -52,7 +64,7 @@ Matter.js drives fixed-step gravity, collisions, friction, inertia, elastic cons
 
 Buoyancy and drag depend on immersion. Misplaced residents react immediately and aim for the nearest suitable water or shore instead of a distant spawn. Fish flop, octopuses crawl, birds take off, and land residents paddle and climb reachable edges. Open nearby routes are checked for return within twelve active seconds. A visible rescue bubble remains a continuous-motion fallback after at least six seconds and measured lack of progress. Soft-bodied marine recovery includes a playful wash-back assist; it is not a claim that jellyfish can walk on land. The water has damped traveling waves. Wildlife uses seeded steering and prioritized states, not a network AI or a biological simulator.
 
-This is a stylized **2D physics world with shallow 2.5D beach depth**, not full 3D or a fluid solver. Depth collision bands keep separate foreground objects from blocking distant ones while retaining terrain contact. Foreground depth transitions back toward zero at the water's edge. Static background vegetation and distant scenery are decorative; the listed physical toys and residents are interactive.
+This is a stylized **2D physics world with shallow 2.5D beach depth**, not full 3D or a fluid solver. Depth collision bands keep separate foreground objects from blocking distant ones while retaining terrain contact. Foreground depth transitions back toward zero at the water's edge. Background vegetation and distant scenery are decorative even when animated; the listed physical toys and residents are interactive.
 
 Bird navigation retains collision-clear waypoints instead of repeatedly choosing a new escape direction. If movable clutter closes a route, a bird can gently push it aside while fixed obstacles remain solid. A bird enclosed by Blobby's soft mesh can briefly slip out; small swimmers enclosed by the float ring can pass through its open center in depth. These narrowly scoped escape states restore normal collisions when clear and never teleport bodies.
 
@@ -87,6 +99,10 @@ Browser checks capture screenshots and results in the ignored `test-results/` di
 Six additional living-world cases cover all three maps in Chromium and WebKit. Playwright's controlled clock advances actual animation frames through more than seven simulated minutes, without changing gameplay timers or exposing mutation controls. Real pointer input checks three-grip shaping, foreground travel and regrabbing, held expressions, habitat recovery, each species' voice where audio is available, every toy kind, and touch-responsive grass. Timelines check completed meals, cross-species play, pursuit/fleeing, natural comic events, interaction-triggered early events, finite bounded residents, cleanup, and no unearned objective progress.
 
 `npm test` discovers all simulation test files. Coverage includes elastic recovery, buoyancy, tree/toy geometry, idle-sound suppression, camera coordinates, shared floor/collision contours, substantial habitat journeys, depth picking, shadow projection, pose/bubble alignment, transition continuity, all objective positive/negative controls, and comic-event timing and attribution. See [DESIGN-V3.md](DESIGN-V3.md) for the design and research references.
+
+For a focused audio/input run in PowerShell, set `$env:BLOB_FEATURES='audio'` before `npm run test:browser`, then remove that selector with `Remove-Item Env:BLOB_FEATURES`. This runs all eight viewport/input cases with Chromium PCM spectrum, audible gameplay, mixing, and native-node cleanup checks, plus WebKit's disabled fallback. It does not replace the full coast/objective journey or long-running living-world release tests. Audio measurements are retained in the ignored `test-results/` directory.
+
+For stage visual inspection, set `$env:BLOB_FEATURES='visual'`, `$env:BLOB_STAGE='v4-final'`, and `$env:BLOB_CASES='desktop,phone'`, then run `npm run test:browser`. This captures every map at shore/reef and during its signature event, renders repertoire pose galleries, and checks parallax, refraction clipping, cache limits, fallback rendering, and frozen event state. Remove these three environment variables before a full regression run. Stage reports identify their scope and tested local HTML hash.
 
 Windows Playwright WebKit has no Web Audio API, reports MP3 support without advancing playback, and cannot navigate local files while offline emulation is enabled. Its tests block external asset requests and assert the disabled-audio fallback. Chromium tests run disconnected and verify actual music playback and sound effects. These are browser-engine/emulation checks, not a claim of testing physical iPad hardware.
 

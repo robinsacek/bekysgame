@@ -1,8 +1,8 @@
-export function drawForagePatch(art, context, patch, time) {
+export function drawForagePatch(art, context, patch, time, wind = 0) {
   const { paint, mix, oval, colors } = art;
   const available = patch.readyAt <= time;
   const positionY = patch.y + patch.depth;
-  const stirred = patch.touchedUntil > time ? Math.sin(time * 0.022) * 8 : Math.sin(time * 0.0016 + patch.x) * 1.8;
+  const stirred = patch.touchedUntil > time ? Math.sin(time * 0.022) * 8 : wind * (4 + Math.sin(time * 0.0016 + patch.x) * 6);
   context.save(); context.translate(patch.x, positionY); context.lineCap = 'round';
   if (patch.food === 'grass' || patch.food === 'algae') {
     const grass = patch.food === 'grass';

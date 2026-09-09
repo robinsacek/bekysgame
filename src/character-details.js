@@ -1,4 +1,5 @@
-import { applyCreaturePose, drawingSize } from './creature-pose.js';
+import { applyCreaturePose, drawingSize, eyeGaze } from './creature-pose.js';
+import { comicPose } from './antics.js';
 
 const TAU = Math.PI * 2;
 
@@ -12,7 +13,8 @@ export function drawLocalResident(art, context, resident, time) {
   if (!['lizard', 'starfish', 'rabbit'].includes(resident.species)) return false;
   const { paint, mix, oval, colors } = art;
   const { paper, ink, green, yellow, pink, wood } = colors;
-  const comic = resident.anticUntil > time ? resident.antic : null;
+  const gaze = eyeGaze(resident);
+  const comic = resident.anticUntil > time && time - (resident.anticStart ?? resident.anticUntil - 2500) >= 350 ? resident.antic : resident.fidgetUntil > time ? resident.fidget : null;
   const motion = Math.sin(resident.motionPhase + resident.phase) * Math.min(1, Math.abs(resident.body.velocity.x) + Math.abs(resident.depthVelocity));
   context.save(); applyCreaturePose(context, resident, time);
   if (resident.species === 'starfish') {
@@ -25,7 +27,7 @@ export function drawLocalResident(art, context, resident, time) {
       const angle = -Math.PI / 2 + index / 5 * TAU;
       for (const radius of [9, 15]) oval(context, Math.cos(angle) * radius, Math.sin(angle) * radius, 1.5, 1.5, paint(paper, 0.4));
     }
-    for (const offset of [-4, 4]) { oval(context, offset, -3, 3, 3.5, paint(paper)); oval(context, offset + 0.5, -2.5, 1.4, 2, paint(ink)); }
+    for (const offset of [-4, 4]) { oval(context, offset, -3, 3, 3.5, paint(paper)); oval(context, offset + 0.5 + gaze.x * 0.5, -2.5 + gaze.y, 1.4, 2, paint(ink)); }
   } else if (resident.species === 'lizard') {
     context.strokeStyle = paint(mix(green, yellow, 0.28)); context.lineWidth = 6; context.lineCap = 'round';
     context.beginPath(); context.moveTo(-16, 3); context.bezierCurveTo(-30, 0, -36, 16, -52, 5 + motion * 4); context.stroke();
@@ -35,7 +37,7 @@ export function drawLocalResident(art, context, resident, time) {
     for (let scale = 0; scale < 15; scale += 1) oval(context, -17 + scale % 5 * 7, -4 + Math.floor(scale / 5) * 3, 1.1, 0.7, paint(scale % 2 ? paper : ink, 0.14));
     for (let index = -3; index < 3; index += 1) polygon(context, [[index * 6, -6], [index * 6 + 2, -13], [index * 6 + 5, -7]], paint(mix(yellow, green, 0.2)));
     context.strokeStyle = paint(paper, 0.25); context.lineWidth = 2; context.beginPath(); context.moveTo(-19, 1); context.lineTo(15, 1); context.stroke();
-    oval(context, 24, -6, 4, 4.3, paint(paper)); oval(context, 25, -6, 1.8, 2.6, paint(ink));
+    oval(context, 24, -6, 4, 4.3, paint(paper)); oval(context, 25 + gaze.x, -6 + gaze.y, 1.8, 2.6, paint(ink));
     if (comic === 'tongue-flick' || resident.state === 'feeding') {
       context.strokeStyle = paint(pink); context.lineWidth = 1.8; context.beginPath(); context.moveTo(29, 0); context.lineTo(45 + Math.abs(Math.sin(time * 0.022)) * 17, -2); context.stroke();
       oval(context, 61, -4, 2.2, 1.8, paint(ink, 0.7)); oval(context, 61, -7, 3, 2, paint(paper, 0.4));
@@ -46,10 +48,11 @@ export function drawLocalResident(art, context, resident, time) {
     for (const offset of [-9, 8]) oval(context, offset + motion * 2, 13, 8, 4, paint(mix(fur, ink, 0.08)));
     oval(context, -1, 0, 18, 14, paint(fur)); oval(context, 13, -7, 12, 12, paint(fur));
     for (const offset of [8, 17]) {
-      oval(context, offset, -26, 4.5, 17, paint(fur), (offset === 8 ? -0.24 : 0.13) + motion * 0.08);
-      oval(context, offset, -27, 2, 11, paint(mix(pink, paper, 0.7)), offset === 8 ? -0.24 : 0.13);
+      const earAngle = (offset === 8 ? -0.24 : 0.13) + motion * 0.08 + (comic === 'ear-flick' ? Math.sin(time * 0.021 + offset) * 0.35 : 0);
+      oval(context, offset, -26, 4.5, 17, paint(fur), earAngle);
+      oval(context, offset, -27, 2, 11, paint(mix(pink, paper, 0.7)), earAngle);
     }
-    oval(context, 18, -9, 3.4, 4, paint(paper)); oval(context, 19, -8.5, 1.7, 2.5, paint(ink));
+    oval(context, 18, -9, 3.4, 4, paint(paper)); oval(context, 19 + gaze.x, -8.5 + gaze.y, 1.7, 2.5, paint(ink));
     oval(context, 25, -3, 2.6, 1.8, paint(mix(pink, paper, 0.4)));
     context.strokeStyle = paint(mix(ink, paper, 0.35), 0.55); context.lineWidth = 0.6;
     for (const offset of [-1, 1]) { context.beginPath(); context.moveTo(20, -1); context.lineTo(29, offset * 3); context.moveTo(19, 1); context.lineTo(27, 3 + offset * 2); context.stroke(); }
@@ -58,8 +61,59 @@ export function drawLocalResident(art, context, resident, time) {
   return true;
 }
 
+function drawGagDetail(art, context, resident, time) {
+  if (resident.held) return;
+  const moment = resident.anticUntil > time;
+  const kind = moment ? resident.antic : resident.fidgetUntil > time ? resident.fidget : null;
+  if (!kind) return;
+  const start = moment ? resident.anticStart : resident.fidgetStart;
+  const duration = moment ? 2500 : resident.fidgetUntil - start;
+  const pose = comicPose(kind, (time - start) / duration);
+  if (pose.active <= 0) return;
+  const { paint, mix, oval, colors } = art;
+  const pulse = pose.pulse;
+  context.save(); applyCreaturePose(context, resident, time);
+  context.lineCap = 'round';
+  if (/throat-fan|sun-salute/.test(kind)) {
+    polygon(context, [[12, 1], [29, 0], [21, 4 + pulse * 20]], paint(mix(colors.yellow, colors.pink, kind === 'sun-salute' ? 0.4 : 0.22), 0.85));
+  } else if (/polish|juggle/.test(kind)) {
+    for (let item = 0; item < (kind === 'shell-juggle' ? 3 : 1); item += 1) {
+      const phase = pose.active * Math.PI * 3 + item * 2;
+      const positionX = kind === 'shell-juggle' ? Math.cos(phase) * 23 : 17;
+      const positionY = kind === 'shell-juggle' ? -17 - Math.abs(Math.sin(phase)) * 27 : 5;
+      oval(context, positionX, positionY, 5, 4, paint(mix(colors.pink, colors.paper, 0.65), pulse));
+      context.strokeStyle = paint(colors.paper, pulse * 0.8); context.lineWidth = 1;
+      context.beginPath(); context.moveTo(positionX - 7, positionY - 7); context.lineTo(positionX - 7, positionY - 13); context.moveTo(positionX - 10, positionY - 10); context.lineTo(positionX - 4, positionY - 10); context.stroke();
+    }
+  } else if (/arm-knot|tentacle-twist|peekaboo-wave|arm-wave/.test(kind)) {
+    context.strokeStyle = paint(mix(colors.pink, colors.paper, 0.25), 0.8); context.lineWidth = 3;
+    context.beginPath(); context.moveTo(-15, 8); context.bezierCurveTo(-32, 8 - pulse * 35, 32, 8 - pulse * 35, 15, 8); context.stroke();
+    if (kind === 'arm-knot') { context.beginPath(); context.ellipse(0, -7, 10, 6, pose.active * 3, 0, TAU); context.stroke(); }
+  } else if (/nose-twitch|toothy-grin|eyestalk-spin|sleepy-nod/.test(kind)) {
+    const mouthX = resident.species === 'shark' ? 39 : resident.species === 'tortoise' ? 31 : 20;
+    context.strokeStyle = paint(colors.ink, pulse * 0.7); context.lineWidth = 1.2;
+    context.beginPath(); context.arc(mouthX, 2, 3 + pulse * 2, 0.2, Math.PI - 0.2); context.stroke();
+    if (kind === 'eyestalk-spin') for (const eye of [9, 18]) { context.beginPath(); context.arc(eye, -8, 5, pose.active * 8, pose.active * 8 + Math.PI); context.stroke(); }
+  } else if (/fin-fan|bell-flare/.test(kind)) {
+    context.strokeStyle = paint(mix(colors.paper, colors.blue, 0.18), pulse * 0.85); context.lineWidth = 1.2;
+    for (let ray = 0; ray < 5; ray += 1) {
+      const angle = -Math.PI + ray * Math.PI / 4;
+      context.beginPath(); context.moveTo(-4, 0); context.lineTo(-4 + Math.cos(angle) * (10 + pulse * 8), Math.sin(angle) * (10 + pulse * 8)); context.stroke();
+    }
+  } else if (/wing-settle|landing-flare/.test(kind)) {
+    context.strokeStyle = paint(colors.paper, pulse * 0.75); context.lineWidth = 2;
+    for (let feather = 0; feather < 3; feather += 1) {
+      context.beginPath(); context.moveTo(-12, 1); context.lineTo(-25 - feather * 4, -5 - pulse * (10 + feather * 5)); context.stroke();
+    }
+  } else if (/sand|thump/.test(kind)) {
+    for (let grain = 0; grain < 7; grain += 1) oval(context, (grain - 3) * (3 + pulse * 5), 13 - Math.sin(grain * 1.7) ** 2 * pulse * 10, 1.2, 0.8, paint(colors.wood, pulse * 0.35));
+  }
+  context.restore();
+}
+
 export function drawReaction(art, context, resident, time) {
   const { paint, mix, oval, colors } = art;
+  drawGagDetail(art, context, resident, time);
   const comic = resident.anticUntil > time ? resident.antic : null;
   context.save(); applyCreaturePose(context, resident, time);
   if (resident.species === 'shark' && (resident.snapUntil > time || comic === 'yawn')) {
@@ -104,6 +158,11 @@ export function drawReaction(art, context, resident, time) {
     context.beginPath(); context.moveTo(face[0] - 7, face[1] - 12); context.lineTo(face[0] - 1, face[1] - 15); context.moveTo(face[0] + 1, face[1] - 15); context.lineTo(face[0] + 7, face[1] - 12); context.stroke();
   }
   context.restore();
+  if (resident.comicReactionUntil > time && !resident.held) {
+    const position = { x: resident.body.position.x, y: resident.body.position.y + resident.depth - resident.height * 0.7 };
+    context.strokeStyle = paint(resident.comicReaction === 'startle' ? colors.pink : colors.paper, 0.7); context.lineWidth = 1.5;
+    for (const side of [-1, 1]) { context.beginPath(); context.moveTo(position.x + side * 8, position.y); context.lineTo(position.x + side * 12, position.y - 5); context.stroke(); }
+  }
   if (resident.rescue) {
     const radius = Math.max(resident.width, resident.height) * 0.72;
     const point = { x: resident.body.position.x, y: resident.body.position.y + resident.depth };
@@ -128,8 +187,8 @@ export function drawComicEffects(art, context, island, time) {
     oval(context, drop.body.position.x, drop.body.position.y - 1, 1.3, 1.5, paint(colors.wood, 0.4));
   }
   for (const event of [...island.wildlife.comedy.events, ...island.wildlife.interactions.effects]) {
-    const age = (time - event.time) / 1000;
-    if (age > 4.3) continue;
+    const age = (time - event.time - (event.character ? 350 : 0)) / 1000;
+    if (age < 0 || age > 4.3) continue;
     if (event.kind === 'tingle') {
       context.strokeStyle = paint(colors.yellow, Math.max(0, 1 - age)); context.lineWidth = 1.7;
       for (let ray = 0; ray < 6; ray += 1) {
@@ -139,9 +198,10 @@ export function drawComicEffects(art, context, island, time) {
       }
     } else if (event.kind === 'splat') {
       for (let index = 0; index < 4; index += 1) oval(context, event.x + index * 3 - 5, event.y + Math.sin(index) * 2, 4, 1.4, paint(colors.paper, Math.max(0, 0.8 - age * 0.18)));
-    } else if (event.kind === 'bubble-ring') {
+    } else if (/bubble|ring|pearls/.test(event.kind)) {
       context.strokeStyle = paint(colors.paper, Math.max(0, 0.6 - age * 0.15)); context.lineWidth = 1.3;
-      context.beginPath(); context.ellipse(event.x, event.y - age * 22, 9 + age * 8, 4 + age * 3, 0, 0, TAU); context.stroke();
+      context.beginPath(); context.ellipse(event.x, event.y - age * 22, (9 + age * 8) * (event.escalation || 1), 4 + age * 3, 0, 0, event.kind === 'broken-ring' ? Math.PI * 1.4 : TAU); context.stroke();
+      if (event.kind === 'pearl-bubbles') for (let bubble = 0; bubble < 3; bubble += 1) oval(context, event.x + (bubble - 1) * 9, event.y - age * (14 + bubble * 9), 2, 3, paint(colors.paper, Math.max(0, 0.35 - age * 0.08)));
     } else if (event.kind === 'ink-puff') oval(context, event.x - age * 8, event.y + 7, 12 + age * 11, 10 + age * 7, paint(colors.ink, Math.max(0, 0.2 - age * 0.05)));
     else if (event.kind === 'sneeze') {
       for (let index = 0; index < 6; index += 1) oval(context, event.x + age * (15 + index * 8), event.y - 8 + age * (index - 3) * 8, 1.5, 1.5, paint(colors.paper, Math.max(0, 0.7 - age * 0.3)));

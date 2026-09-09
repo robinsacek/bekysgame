@@ -1,4 +1,4 @@
-import { applyCreaturePose, drawingSize } from './creature-pose.js';
+import { applyCreaturePose, drawingSize, eyeGaze } from './creature-pose.js';
 
 const TAU = Math.PI * 2;
 
@@ -21,6 +21,7 @@ export function drawCreature(art, context, resident, time) {
   const { paper, ink, blue, yellow, pink, green, wood } = art.colors;
   const { body, direction, species, state } = resident;
   const [width, height] = drawingSize(resident);
+  const gaze = eyeGaze(resident);
   const moving = Math.abs(body.velocity.x) + Math.abs(body.velocity.y) + Math.abs(resident.depthVelocity) > 0.2;
   const motion = resident.antic === 'claw-dance' && resident.anticUntil > time ? Math.sin(time * 0.04) * 2.5 : moving ? Math.sin(resident.motionPhase + resident.phase) : Math.sin(time * 0.002 + resident.phase) * 0.2;
   const blink = (time + resident.phase * 630) % 6400 > 6260;
@@ -46,7 +47,7 @@ export function drawCreature(art, context, resident, time) {
       context.beginPath(); context.moveTo(-width * 0.22 + index * 5, -height * 0.32); context.quadraticCurveTo(-width * 0.30 + index * 5, 0, -width * 0.22 + index * 5, height * 0.32); context.stroke();
     }
     oval(context, width * 0.25, -height * 0.12, 4.2, 4.8, paint(paper));
-    oval(context, width * 0.29, -height * 0.10, 2.2, blink ? 0.6 : 2.8, paint(ink));
+    oval(context, width * 0.29 + gaze.x, -height * 0.10 + gaze.y, 2.2, blink ? 0.6 : 2.8, paint(ink));
     shape(context, [[-2, 1], [6, 2], [-1 + motion * 2, 9]], paint(mix(color, pink, 0.16), 0.8));
   } else if (species === 'jellyfish') {
     const pulse = resident.antic === 'hiccup' && resident.anticUntil > time ? (Math.sin(time * 0.025) + 1) / 2 : resident.pulse || 0;
@@ -69,7 +70,7 @@ export function drawCreature(art, context, resident, time) {
     context.strokeStyle = paint(paper, 0.8); context.lineWidth = 1.2; context.stroke();
     context.strokeStyle = paint(paper, 0.25); context.lineWidth = 0.8;
     for (const offset of [-0.5, 0, 0.5]) { context.beginPath(); context.moveTo(offset * 5, -bellHeight); context.quadraticCurveTo(offset * spread * 1.2, -bellHeight * 0.4, offset * spread * 1.4, 5); context.stroke(); }
-    for (const offset of [-6, 6]) { oval(context, offset, -4, 2.6, 3.1, paint(paper, 0.8)); oval(context, offset + 0.3, -3.6, 1.1, blink ? 0.4 : 1.7, paint(ink, 0.7)); }
+    for (const offset of [-6, 6]) { oval(context, offset, -4, 2.6, 3.1, paint(paper, 0.8)); oval(context, offset + 0.3 + gaze.x * 0.6, -3.6 + gaze.y, 1.1, blink ? 0.4 : 1.7, paint(ink, 0.7)); }
   } else if (species === 'shark') {
     const skin = mix(blue, mix(ink, paper, 0.60), 0.76);
     const tail = Math.sin(resident.motionPhase * 0.7 + resident.phase) * (4 + Math.min(5, Math.abs(body.velocity.x) * 2));
@@ -81,7 +82,7 @@ export function drawCreature(art, context, resident, time) {
     context.fillStyle = paint(mix(paper, skin, 0.18)); context.beginPath(); context.moveTo(-25, 6);
     context.quadraticCurveTo(10, 11, 47, -1); context.quadraticCurveTo(39, 16, 10, 16); context.quadraticCurveTo(-15, 11, -25, 6); context.fill();
     shape(context, [[2, 8], [-16, 26 + tail * 0.15], [22, 9]], paint(mix(skin, ink, 0.1)));
-    oval(context, 32, -5, 3.5, 3.8, paint(paper)); oval(context, 33, -5, 1.8, blink ? 0.5 : 2.5, paint(ink));
+    oval(context, 32, -5, 3.5, 3.8, paint(paper)); oval(context, 33 + gaze.x, -5 + gaze.y, 1.8, blink ? 0.5 : 2.5, paint(ink));
     context.strokeStyle = paint(ink, 0.46); context.lineWidth = 1.1;
     for (let index = 0; index < 3; index += 1) { context.beginPath(); context.moveTo(12 - index * 4, -4); context.quadraticCurveTo(10 - index * 4, 1, 12 - index * 4, 5); context.stroke(); }
     if (!resident.frown && resident.snapUntil <= time && !(resident.antic === 'yawn' && resident.anticUntil > time)) { context.beginPath(); context.moveTo(34, 6); context.quadraticCurveTo(39, 8, 45, 3); context.stroke(); }
@@ -114,16 +115,17 @@ export function drawCreature(art, context, resident, time) {
     const head = context.createRadialGradient(-7, -17, 1, 0, -7, 25);
     head.addColorStop(0, paint(mix(skin, paper, 0.25))); head.addColorStop(1, paint(skin));
     oval(context, 0, -7, hiding ? 17 : 20, hiding ? 16 : 22, head);
-    for (const offset of [-7, 7]) { oval(context, offset, -5, 5, 6, paint(paper)); oval(context, offset + 0.8, -3.5, 2.1, blink ? 0.6 : 3.2, paint(ink)); }
+    for (const offset of [-7, 7]) { oval(context, offset, -5, 5, 6, paint(paper)); oval(context, offset + 0.8 + gaze.x, -3.5 + gaze.y, 2.1, blink ? 0.6 : 3.2, paint(ink)); }
     if (!resident.frown) { context.strokeStyle = paint(ink, 0.65); context.lineWidth = 1.1; context.beginPath(); context.arc(0, 2, 3.5, 0.2, 2.9); context.stroke(); }
     for (const [offsetX, offsetY] of [[-10, -20], [5, -22], [12, -15]]) oval(context, offsetX, offsetY, 2.2, 1.5, paint(paper, 0.14));
   } else if (species === 'tortoise') {
     for (const offset of [-16, 12]) {
-      oval(context, offset + motion * 2, height * 0.35, 8, 5.5, paint(mix(green, yellow, 0.28)), motion * 0.1);
+      const stride = moving ? Math.sin(resident.motionPhase + (offset < 0 ? 0 : Math.PI)) : 0;
+      oval(context, offset + stride * 2, height * 0.35, 8, 5.5, paint(mix(green, yellow, 0.28)), stride * 0.1);
     }
     oval(context, 26, 1, 10, 9, paint(mix(green, yellow, 0.34)));
     oval(context, 30, -1, 3.3, 3.7, paint(paper));
-    oval(context, 31, -0.5, 1.6, blink ? 0.5 : 2.3, paint(ink));
+    oval(context, 31 + gaze.x, -0.5 + gaze.y, 1.6, blink ? 0.5 : 2.3, paint(ink));
     oval(context, -3, -2, 25, 18, paint(mix(green, ink, 0.18)));
     oval(context, -5, -5, 22, 13, paint(mix(green, yellow, 0.24)));
     context.strokeStyle = paint(mix(green, ink, 0.40), 0.72); context.lineWidth = 1.5;
@@ -140,7 +142,8 @@ export function drawCreature(art, context, resident, time) {
     context.strokeStyle = paint(coral); context.lineWidth = 3; context.lineCap = 'round';
     for (let index = 0; index < 3; index += 1) {
       const offset = -11 + index * 10;
-      context.beginPath(); context.moveTo(offset, 5); context.lineTo(offset - 6, 10 + motion); context.lineTo(offset - 2 + motion * 2, 13); context.stroke();
+      const stride = moving ? Math.sin(resident.motionPhase + index * 2.1) : motion;
+      context.beginPath(); context.moveTo(offset, 5); context.lineTo(offset - 6, 10 + stride); context.lineTo(offset - 2 + stride * 2, 13); context.stroke();
     }
     oval(context, -5, -2, 15, 13, paint(mix(pink, paper, 0.72)));
     oval(context, -10, -8, 7, 2.5, paint(paper, 0.38), -0.6);
@@ -158,7 +161,7 @@ export function drawCreature(art, context, resident, time) {
     for (const offset of [9, 18]) {
       context.strokeStyle = paint(coral); context.lineWidth = 2;
       context.beginPath(); context.moveTo(offset, 2); context.lineTo(offset, -8); context.stroke();
-      oval(context, offset, -8, 3.5, 4, paint(paper)); oval(context, offset + 0.6, -8, 1.7, blink ? 0.5 : 2.3, paint(ink));
+      oval(context, offset, -8, 3.5, 4, paint(paper)); oval(context, offset + 0.6 + gaze.x, -8 + gaze.y, 1.7, blink ? 0.5 : 2.3, paint(ink));
     }
     context.strokeStyle = paint(coral); context.lineWidth = 3;
     context.beginPath(); context.moveTo(17, 6); context.lineTo(26, 1 + motion * 2); context.stroke();
@@ -181,7 +184,7 @@ export function drawCreature(art, context, resident, time) {
     shape(context, [[18, -9], [beakLength, -6], [18, -3]], paint(resident.appearance === 'sandpiper' ? wood : yellow));
     if (resident.appearance === 'pelican') { context.fillStyle = paint(mix(yellow, paper, 0.42)); context.beginPath(); context.moveTo(18, -3); context.quadraticCurveTo(29, 5, beakLength, -6); context.closePath(); context.fill(); }
     if (resident.appearance === 'kingfisher') oval(context, 7, 3, 9, 6, paint(mix(yellow, pink, 0.2)));
-    oval(context, 14, -10, 2.2, blink ? 0.6 : 2.4, paint(ink));
+    oval(context, 14 + gaze.x * 0.45, -10 + gaze.y * 0.5, 2.2, blink ? 0.6 : 2.4, paint(ink));
     context.fillStyle = paint(mix(feathers, blue, 0.14));
     context.beginPath(); context.moveTo(7, -3);
     context.quadraticCurveTo(-1, -7 + flight * (-12 - wingMotion * 21), -33, 8 + flight * (-25 - wingMotion * 30));
@@ -319,7 +322,18 @@ export function drawObjectiveEffects(art, context, island, time) {
     if (age < 0 || age > 2) continue;
     for (let index = 0; index < 12; index += 1) {
       const angle = index / 12 * TAU;
-      oval(context, flourish.x + Math.cos(angle) * age * 49, flourish.y + Math.sin(angle) * age * 31 - age * 32, 2.8, 2.8, paint(art.rainbow[index % 7], 1 - age / 2));
+      const positionX = flourish.x + Math.cos(angle) * age * 49;
+      const positionY = flourish.y + Math.sin(angle) * age * 31 - age * 32;
+      const alpha = 1 - age / 2;
+      if (island.map.id === 'lagoon') art.leaf(context, positionX, positionY, 7, 2.5, angle + age, paint(art.rainbow[index % 7], alpha));
+      else if (island.map.id === 'pools') {
+        context.strokeStyle = paint(art.rainbow[index % 7], alpha); context.lineWidth = 1.4;
+        context.beginPath(); context.arc(positionX, positionY, 2.8 + age, 0, TAU); context.stroke();
+      } else {
+        context.strokeStyle = paint(index % 2 ? art.colors.yellow : art.colors.paper, alpha); context.lineWidth = 1.8;
+        context.beginPath(); context.moveTo(positionX - 3, positionY); context.lineTo(positionX + 3, positionY);
+        context.moveTo(positionX, positionY - 3); context.lineTo(positionX, positionY + 3); context.stroke();
+      }
     }
   }
 }

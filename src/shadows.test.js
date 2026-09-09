@@ -16,3 +16,16 @@ test('shadows follow the body, beach depth, height and the correct contact surfa
   assert.ok(Math.abs(floating.y - island.layout.water) < 5, 'Floating toys must contact the water, not cast a detached seabed stripe');
   island.dispose();
 });
+
+test('map sun direction controls shadow angle and low sunset light has a longer reach', () => {
+  const lagoon = new IslandPhysics(3200, 900, 'lagoon', true);
+  const sunset = new IslandPhysics(3200, 900, 'sunset', true);
+  try {
+    const sample = island => projectShadow(island, { x: 620, y: island.layout.ground - 140, width: 50, height: 40 });
+    const high = sample(lagoon);
+    const low = sample(sunset);
+    assert.ok(high.x > 620 && low.x < 620, 'Shadows must point away from their map sun');
+    assert.ok(Math.abs(low.x - 620) > Math.abs(high.x - 620) * 2);
+    assert.ok(high.softness > 1);
+  } finally { lagoon.dispose(); sunset.dispose(); }
+});
