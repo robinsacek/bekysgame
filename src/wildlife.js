@@ -284,7 +284,8 @@ class Wildlife {
       const food = this.picnicFood();
       if (food) {
         const standOff = food.radius + resident.width * 0.41 + 7;
-        const choices = [0, 12, 24, 36].flatMap(extra => [-1, 1].map(side => ({ x: food.body.position.x + side * (standOff + extra), y: landmarks.picnic.y - resident.height * 0.41 })));
+        const choices = [0, 12, 24, 36].flatMap(extra => [-1, 1].map(side => ({ x: food.body.position.x + side * (standOff + extra), y: landmarks.picnic.y - resident.height * 0.41 })))
+          .filter(target => Math.abs(target.x - landmarks.picnic.x) < landmarks.picnic.radius);
         choices.sort((first, second) => Math.abs(first.x - point.x) - Math.abs(second.x - point.x));
         const blocked = target => {
           const bounds = { min: { x: target.x - resident.width * 0.41, y: target.y - resident.height * 0.41 }, max: { x: target.x + resident.width * 0.41, y: target.y + resident.height * 0.41 } };

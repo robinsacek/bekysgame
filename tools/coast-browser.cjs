@@ -66,7 +66,14 @@ async function carry(page, view, selector, target) {
   }, { selector, positionX: target.x });
   await trackWorldTarget(page, target, 65);
   state = await stateOf(page);
-  const destination = screenPoint(state, view, target);
+  const releaseTarget = { ...target };
+  if (selector === 'blob') {
+    releaseTarget.x += target.x - state.blob.x;
+    releaseTarget.y += target.y - state.blob.y;
+    await trackWorldTarget(page, releaseTarget, 65);
+    state = await stateOf(page);
+  }
+  const destination = screenPoint(state, view, releaseTarget);
   destination.x = Math.max(14, Math.min(view.width - 14, destination.x));
   await pointer(page, 'pointerup', destination);
   assert.equal((await stateOf(page)).drags, 0);
@@ -106,8 +113,13 @@ async function exerciseCoast(page, config, output) {
   await pointer(page, 'pointerup', { x: config.viewport.width * 0.38, y: background.y });
   assert.ok((await stateOf(page)).camera.x > home.camera.x + 40, 'Dragging empty scenery must pan');
   await page.locator('#find-jelly').click();
-  await carry(page, config.viewport, 'blob', { x: initial.landmarks.far.x, y: initial.landmarks.far.y - 80 });
-  await page.waitForFunction(() => window.__blobIsland.snapshot().objectives.entries[0].complete, undefined, { timeout: 9000 });
+  await carry(page, config.viewport, 'blob', { x: initial.landmarks.far.x + 60, y: initial.landmarks.far.y - initial.blob.radius - 5 });
+  const farDelivery = await stateOf(page);
+  try {
+    await page.waitForFunction(() => window.__blobIsland.snapshot().objectives.entries[0].complete, undefined, { timeout: 9000 });
+  } finally {
+    fs.writeFileSync(path.join(output, `${config.name}-far-arrival.json`), JSON.stringify({ source: page.url(), delivered: farDelivery, settled: await stateOf(page) }, null, 2));
+  }
   const arrived = await stateOf(page);
   assert.ok(arrived.blob.x > 2900);
   assert.equal(arrived.pointerCount, 0);

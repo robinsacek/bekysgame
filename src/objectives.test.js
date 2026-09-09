@@ -82,6 +82,24 @@ test('the picnic completes from an actual delivery and autonomous shared visit',
   island.dispose(); fresh.dispose();
 });
 
+test('picnic snack targets remain within the shared visit area from either approach', () => {
+  for (const offset of [-60, -15, 60]) for (const side of [-1, 1]) {
+    const island = new IslandPhysics(3200, 900, 'lagoon', true);
+    const picnic = island.landmarks.picnic;
+    const coconut = island.props.find(prop => prop.kind === 'coconut');
+    const tortoise = island.wildlife.residents.find(resident => resident.species === 'tortoise');
+    put(coconut, { x: picnic.x + offset, y: picnic.y - coconut.radius - 1 });
+    island.grab(30, coconut.body.position, 0); island.release(30);
+    Body.setPosition(tortoise.body, { x: picnic.x + side * 160, y: picnic.y - tortoise.height * 0.41 });
+    assert.equal(island.wildlife.picnicFood(), coconut, 'The released player delivery must attract both visitors');
+    island.wildlife.decideGround(tortoise);
+    assert.ok(['foraging', 'snacking'].includes(tortoise.state), 'The visitor must approach or settle beside the delivered coconut');
+    assert.ok(Math.abs(tortoise.target.x - picnic.x) + 15 < 100,
+      `The snack target and arrival tolerance must fit the shared visit area: ${JSON.stringify({ offset, side, target: tortoise.target })}`);
+    island.dispose();
+  }
+});
+
 test('reef friendship needs player-guided Blobby and actual responses from three distinct species', () => {
   const island = new IslandPhysics(3200, 900, 'lagoon', true);
   const point = { x: island.landmarks.reef.x, y: island.layout.water + 120 };

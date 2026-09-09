@@ -58,6 +58,7 @@ export class IslandScene {
     const waterEnd = island.layout.waterEnd || island.width;
     this.waterBed = [[waterEnd, island.layout.water], ...this.coastline.filter(point => point[0] > island.layout.waterStart && point[0] < waterEnd).reverse(), [island.layout.waterStart, island.layout.water]];
     this.scale = canvas.height / island.height;
+    this.minimumScale = Math.min(this.scale, (canvas.clientHeight || canvas.height) / island.height * 0.75);
     Object.assign(this, { paint, mix, oval, clamp });
     this.random = randomSource();
     this.pupils = [{ x: 0, y: 0, velocityX: 0, velocityY: 0 }, { x: 0, y: 0, velocityX: 0, velocityY: 0 }];
@@ -395,9 +396,15 @@ export class IslandScene {
     if (elapsed <= 0) return;
     this.frameAverage += (elapsed - this.frameAverage) * 0.06;
     this.qualityFrames += 1;
-    if (this.qualityFrames < 45 || this.frameAverage <= 34) return;
+    if (this.qualityFrames < (this.frameAverage > 50 ? 20 : 45) || this.frameAverage <= 34) return;
     if (this.quality.refraction) this.quality.refraction = false;
     else if (this.quality.caustics) this.quality.caustics = false;
+    else if (this.scale > this.minimumScale + 0.5 / this.height) {
+      const ratio = this.minimumScale / this.scale;
+      this.canvas.width = Math.round(this.canvas.width * ratio);
+      this.canvas.height = Math.round(this.canvas.height * ratio);
+      this.scale = this.canvas.height / this.height;
+    }
     this.qualityFrames = 0;
   }
 

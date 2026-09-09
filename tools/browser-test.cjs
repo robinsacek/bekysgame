@@ -358,9 +358,20 @@ async function verifyScene(page) {
     const fallback = context.getImageData(0, 0, canvas.width, canvas.height).data;
     const fallbackColors = new Set();
     for (let offset = 0; offset < fallback.length; offset += 4 * 113) fallbackColors.add(`${fallback[offset] >> 4},${fallback[offset + 1] >> 4},${fallback[offset + 2] >> 4}`);
+    scene.quality.refraction = true; scene.quality.caustics = true; scene.quality.parallax = true;
+    island.grab(91, island.blobPosition(), 0);
+    const held = JSON.stringify(island.snapshot());
+    for (let frame = 0; frame < 100; frame += 1) scene.observeFrame(90);
+    const adaptive = { width: canvas.width, height: canvas.height, scale: scene.scale,
+      unchangedWorld: held === JSON.stringify(island.snapshot()), grips: island.drags.size, quality: { ...scene.quality } };
+    scene.draw(island, 1200, null, true, camera);
+    const reduced = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const reducedColors = new Set();
+    for (let offset = 0; offset < reduced.length; offset += 4 * 113) reducedColors.add(`${reduced[offset] >> 4},${reduced[offset + 1] >> 4},${reduced[offset + 2] >> 4}`);
+    adaptive.colors = reducedColors.size;
     island.dispose();
     return { insideChanged: inside, outsideChanged: outside, sceneryPixels: scene.sceneryPixels, scratchPixels: scene.refractionCanvas.width * scene.refractionCanvas.height,
-      parallax, renderMs, fallbackColors: fallbackColors.size, fallbackRefraction: scene.refraction };
+      parallax, renderMs, fallbackColors: fallbackColors.size, fallbackRefraction: scene.refraction, adaptive };
   });
   fs.writeFileSync(path.join(output, `${stage}-rendering.json`), JSON.stringify(result, null, 2));
   assert.ok(result.insideChanged > 40, 'Refraction must change actual silhouette pixels');
@@ -370,6 +381,13 @@ async function verifyScene(page) {
   for (const [index, expected] of [25, 55, 100].entries()) assert.ok(Math.abs(result.parallax[index].x - expected) < 1e-9, 'Parallax must match its factor to sub-pixel precision');
   assert.ok(result.fallbackColors > 60);
   assert.equal(result.fallbackRefraction, null);
+  assert.equal(result.adaptive.width, 1080);
+  assert.equal(result.adaptive.height, 675);
+  assert.equal(result.adaptive.scale, 0.75);
+  assert.equal(result.adaptive.unchangedWorld, true, 'Adaptive pixels must not rebuild, advance, or modify the world');
+  assert.equal(result.adaptive.grips, 1, 'Adaptive pixels must preserve the active material grip');
+  assert.deepEqual(result.adaptive.quality, { refraction: false, caustics: false, parallax: true });
+  assert.ok(result.adaptive.colors > 60, 'Reduced-resolution rendering must remain nonblank and detailed');
   return result;
 }
 
