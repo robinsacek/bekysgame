@@ -101,7 +101,7 @@ export class IslandAudio {
   voice(kind, strength, pan) {
     if (!this.enabled || this.paused || this.context?.state !== 'running' || this.activeVoices >= 8) return null;
     const context = this.context;
-    const cooldown = kind === 'stretch' ? 0.28 : kind === 'rustle' ? 0.40 : 0.12;
+    const cooldown = kind.startsWith('voice-') ? 1.4 : kind === 'stretch' ? 0.28 : kind === 'rustle' ? 0.40 : 0.12;
     if (context.currentTime - (this.lastEffect.get(kind) ?? -Infinity) < cooldown) return null;
     this.lastEffect.set(kind, context.currentTime);
     this.effectCounts[kind] = (this.effectCounts[kind] || 0) + 1;
@@ -123,13 +123,13 @@ export class IslandAudio {
     const { context, panner, amount, done } = voice;
     const now = context.currentTime;
     const gain = context.createGain(); gain.connect(panner);
-    if (kind === 'splash' || kind === 'rustle') {
+    if (['splash', 'rustle', 'voice-shark', 'voice-tortoise'].includes(kind)) {
       const source = context.createBufferSource(); source.buffer = this.noise;
       const filter = context.createBiquadFilter();
-      filter.type = 'bandpass'; filter.frequency.value = kind === 'rustle' ? 3200 : 1350; filter.Q.value = kind === 'rustle' ? 0.5 : 0.75;
-      const duration = kind === 'rustle' ? 0.42 : 0.16 + amount * 0.12;
+      filter.type = 'bandpass'; filter.frequency.value = kind === 'rustle' ? 3200 : kind === 'voice-shark' ? 1750 : kind === 'voice-tortoise' ? 950 : 1350; filter.Q.value = kind === 'rustle' ? 0.5 : 0.75;
+      const duration = kind === 'rustle' ? 0.42 : kind === 'voice-shark' ? 0.32 : kind === 'voice-tortoise' ? 0.20 : 0.16 + amount * 0.12;
       gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime((kind === 'rustle' ? 0.10 : 0.20) * amount, now + 0.018);
+      gain.gain.exponentialRampToValueAtTime((kind.startsWith('voice-') ? 0.12 : kind === 'rustle' ? 0.10 : 0.20) * amount, now + 0.018);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
       source.connect(filter); filter.connect(gain); source.start(now, 1 + Math.random() * 7, duration + 0.02);
       source.onended = () => { source.disconnect(); filter.disconnect(); gain.disconnect(); done(); };
@@ -141,6 +141,12 @@ export class IslandAudio {
       stretch: [510, 790 + strength * 70, 0.19, 'triangle'],
       bounce: [560, 270, 0.12, 'sine'], wood: [390, 220, 0.075, 'triangle'],
       shell: [1180, 880, 0.13, 'sine'], glass: [1630, 1320, 0.23, 'sine'],
+      achievement: [660, 1320, 0.44, 'sine'],
+      chime: [1740, 1690, 0.65, 'sine'],
+      'voice-bird': [2200, 3500, 0.17, 'sine'], 'voice-crab': [1350, 900, 0.06, 'triangle'],
+      'voice-fish': [510, 940, 0.11, 'sine'], 'voice-jellyfish': [1240, 1580, 0.33, 'sine'],
+      'voice-octopus': [390, 780, 0.14, 'sine'],
+      'voice-lizard': [1800, 2600, 0.08, 'triangle'], 'voice-rabbit': [850, 1160, 0.12, 'sine'], 'voice-starfish': [1460, 1760, 0.24, 'sine'],
     };
     const [start, end, duration, type] = palette[kind] || palette.grab;
     const variation = 0.96 + Math.random() * 0.08;

@@ -1,34 +1,60 @@
 # Blob Island
 
-A small, see-through rainbow jelly exploring three tropical islands. An unhurried physics playground with silly elastic stretching, googly eyes, swaying coconut palms, shallow water, and physical toys. No scores, timers, or losing.
+A small translucent rainbow character named **Blobby**, exploring three living tropical coastlines. A touch-friendly physics playground with elastic stretching, autonomous residents, deep water, optional objectives, and situational comedy. No countdown, damage, losing, or unlocks.
 
-## Version 2
+## Version 3: Living Coastlines
 
-- An uneven, transparent rainbow soft body that elongates under two independent finger grips and wobbles back after release. Its eyes follow separate fingers when stretched.
-- A rooted palm on each map. Grab its trunk or canopy to sway it, or crash the jelly into it to knock a coconut loose. All three hanging coconuts become real draggable, rolling, floating objects when released.
-- Little Lagoon has a beach ball, bamboo raft, coconut, message bottle, hollow float ring, and crate. Tide Pools adds sinking shells and rocky underwater platforms. Sunset Cove adds a working seesaw and warmer lighting.
-- Each area retains its own state during the session. Inactive areas freeze; switching back preserves toys and fallen coconuts. Refreshing the page starts fresh.
-- Separate effects and music controls. Effects include elastic squeaks, grab/release tones, springy bounces, wooden taps, shell and glass chimes, splashes, palm rustles, and quiet surf. Settled floats do not generate repetitive impact sounds.
+- Each map is a bounded 3200 by 900 world, wider than a screen, with a real far shore, curved banks, uneven physical seabed, textured sand, reef gardens, and map-specific vegetation and lighting.
+- Blobby's resting silhouette matches the logo. Two or three independent grips stretch, squeeze, and reshape its moderately translucent body. Releasing restores elasticity; it cannot tear.
+- A broad foreground beach is usable space: Blobby, loose toys, and land residents can move into it, with depth-aware picking, collisions, ordering, and moving contact shadows. Airborne and floating bodies cast height- or water-relative shadows.
+- Ten residents per area: two fish, a crab, tortoise, shorebird, jellyfish, shark, and octopus, plus a local pair of iguanas, starfish, or rabbits. Map-specific bird, fish, and marine variants have different markings, proportions, names, and movement profiles.
+- Residents mix broad wandering with purposeful approaches to food, toys, habitats, neighbors, and Blobby. Longer journeys can finish without constant social interruption. Fish school; birds bank, flap, glide, and land; misplaced residents visibly react and return toward an appropriate habitat.
+- Each species has a feeding routine: grazers visit replenishing grass, iguanas and birds investigate insects, crabs sift shore scraps, fish and jellyfish feed on plankton, and starfish and octopuses visit reef food patches. Feeding includes approach, a short meal, and a return to other activities. Touch the foreground grass to bend and rustle it.
+- Residents play short games of tag, birds tease fish, and octopuses play peekaboo. A close jellyfish encounter can produce a brief comic tingle and retreat. Play respects grabs, recovery, and the picnic; there is no health loss, injury, or removal of residents.
+- The shark occasionally stalks and lunges while nearby aquatic residents flee. Its animated jaw has a tapered mouth, gums, and small teeth. Nobody is injured or removed.
+- Each character draws a fresh comic-event baseline of 1-7 active-play minutes. Greetings, play, shared meals, escapes, and habitat returns raise a decaying probability bonus and advance that deadline. A completed gag resets the bonus and draws a new baseline. Per-character and global cooldowns prevent repeated-trigger spam; held, recovering, or objective-busy residents defer their event.
+- Gags include bubbles, hiccups, a claw dance, sneezing, yawning, an ink puff, a tongue flick, a rabbit binky, a starfish cartwheel, and an occasional physical bird dropping. Nearby residents can flee with an **Ewww!** reaction. Bubbles use crowd-aware placement and stay clear of the HUD.
+- Four optional journal objectives: reach the far-shore lookout with Blobby, deliver two different shells to Pebble, arrange a coconut picnic for Moss and Skipper, and earn curious responses from three reef species with player-guided underwater Blobby. Camera travel and untouched items do not earn progress.
+- Original tactile toys remain: shake the rooted palm or crash into it to release its three physical coconuts; move balls, rafts, bottles, crates, a hollow ring, shells, skipping stones, a suspended leaf swing, and Sunset Cove's hinged seesaw.
+- Area state and journal progress last for the current session. Inactive maps freeze; switching back preserves identities and activity. Reset affects only the active area. Reload starts fresh.
+
+## Three Habitats
+
+- **Little Lagoon:** sheltered mangroves, a dock, calm water, floating timber, a seedpod, and a physically moored buoy. Mango and Fern explore the beach; a kingfisher and brightly marked reef fish watch and investigate the water.
+- **Tide Pools:** wave-worn rock along connected shoreline terraces, wet crevices, pebble beds, more current, sinking conches, and floating pumice. Aster and Pearl graze along the uneven bottom; Piper the sandpiper, a patterned catshark, and a rock-colored octopus favor the rocky habitat. No scattered circular pools or artificial block obstacles.
+- **Sunset Cove:** broad grass-covered dunes, warm low light, driftwood, a working seesaw, and three separately suspended chimes that sound when swung. Clover and Thistle graze and hop; Sail the pelican glides higher over silvery fish and a larger blacktip shark.
+
+The physical layouts differ too: Lagoon has the broadest open-water basin, Tide Pools has stepped shallows and intermediate land coverage, and Sunset Cove has the widest dry beach and a smaller basin. Both bank positions are map-specific. Drawing, the overview, habitat limits, and collisions use the same floor profile.
+
+All areas retain the four optional objectives and shared essentials, but differ in terrain, usable beach depth, current, rest and flight behavior, resident variants, and physical discoveries. Decorative distant scenery and rock crevices are not additional collision platforms; Tide Pools' usable terraces are part of the shared shoreline geometry.
 
 ## Play
 
 The GitHub Pages destination is **https://robinsacek.github.io/bekysgame/**.
 
-The complete game is also contained in [index.html](index.html), approximately 8.5 MB including the full music recording. Open that file directly on a laptop, or serve it from any static HTTPS host for iPad Safari. Playing needs no installation, CDN, account, backend, or additional assets. The hosted document needs an initial connection; it does not install an offline service worker.
+The complete game is also contained in [index.html](index.html), approximately 9 MB including the full music recording. Open that file directly on a laptop, or serve it from any static HTTPS host for iPad Safari. Playing needs no installation, CDN, account, backend, or additional assets. The hosted document needs an initial connection; it does not install an offline service worker.
 
-- Grab the jelly or a toy with a finger, mouse, or pen. Move it and let go to throw it.
-- Use two fingers to stretch the jelly. It does not tear.
-- Touch or stir the shallow water to make ripples. All loose objects can be picked up; a crate placed on one side tips the seesaw.
+- Grab Blobby, a loose object, or a resident with a finger, mouse, or pen. Move it and let go to throw it.
+- Use two or three fingers to reshape Blobby. A single grip can carry Blobby or a loose object down across the foreground beach; lifting brings it back toward the main contact plane.
+- Drag empty scenery to pan, use the coast overview or journal location pins, or carry an object near the screen edge to travel. Find Blobby returns the camera.
+- Stir water for ripples. Throw a stone quickly at a shallow angle to skip it; a slow drop sinks. Put weight on one side of the seesaw or pull the swing.
+- The journal's four objectives are optional. Its location pins locate the lookout, shell corner, picnic clearing, and reef garden. Hold Blobby calmly near different underwater species to make friends.
 - Use the area selector to visit each map. The reset button restores only the current area, including its coconuts.
 - The toolbar controls music, sound effects, pause, reset, and full screen where supported. Both audio controls start off and are unlocked by a user gesture.
 - Pausing, hiding the page, or leaving it suspends audio. Switching areas does not restart the music. Muting effects does not mute music.
-- Arrow keys move the jelly. Space pauses, R resets the current area, and M toggles sound effects.
+- Arrow keys move Blobby. F finds Blobby, Space pauses, R resets the current area, and M toggles effects.
 
 Landscape and portrait layouts are supported. Rotation preserves the scene's positions and releases active grabs. Use a current version of Safari, Chrome, Edge, or Firefox; iPadOS can open the Pages URL in Safari or add it to the Home Screen.
 
 ## Physics
 
-Matter.js drives fixed-step gravity, collisions, friction, inertia, elastic constraints, and touch springs. The jelly is a 24-point soft-body mesh with volume-supporting pressure. Multiple grips soften the links; releasing them smoothly restores spring strength. The palm is a compound collidable trunk with an anchored root, restoring spring, and detachable fruit. A hollow compound ring and hinged seesaw have physical rather than decorative geometry. Submerged-body buoyancy and water drag make objects settle at the surface. The water has damped traveling waves. These are deliberately playful 2D approximations, not a full fluid solver.
+Matter.js drives fixed-step gravity, collisions, friction, inertia, elastic constraints, and touch springs. Blobby is a 24-point soft mesh with area-supporting pressure. Multiple grips soften the links; release smoothly restores spring strength. The palm is a compound collidable trunk with an anchored root and detachable fruit. The hollow ring, hinged seesaw, swing, banks, and uneven seabed have physical geometry.
+
+Buoyancy and drag depend on immersion. Misplaced residents react immediately and aim for the nearest suitable water or shore instead of a distant spawn. Fish flop, octopuses crawl, birds take off, and land residents paddle and climb reachable edges. Open nearby routes are checked for return within twelve active seconds. A visible rescue bubble remains a continuous-motion fallback after at least six seconds and measured lack of progress. Soft-bodied marine recovery includes a playful wash-back assist; it is not a claim that jellyfish can walk on land. The water has damped traveling waves. Wildlife uses seeded steering and prioritized states, not a network AI or a biological simulator.
+
+This is a stylized **2D physics world with shallow 2.5D beach depth**, not full 3D or a fluid solver. Depth collision bands keep separate foreground objects from blocking distant ones while retaining terrain contact. Foreground depth transitions back toward zero at the water's edge. Static background vegetation and distant scenery are decorative; the listed physical toys and residents are interactive.
+
+Bird navigation retains collision-clear waypoints instead of repeatedly choosing a new escape direction. If movable clutter closes a route, a bird can gently push it aside while fixed obstacles remain solid. A bird enclosed by Blobby's soft mesh can briefly slip out; small swimmers enclosed by the float ring can pass through its open center in depth. These narrowly scoped escape states restore normal collisions when clear and never teleport bodies.
 
 All scenery, object artwork, and sound effects are generated locally. Music is bundled as an embedded recording. There is no analytics, tracking, or saved personal data. Dependency and music notices are retained inside the standalone HTML.
 
@@ -53,16 +79,19 @@ Edit the modules under [src](src), then rebuild. The build produces the single d
 ```sh
 npx playwright install chromium webkit
 npm run test:browser
+npm run test:living
 ```
 
-Browser checks capture screenshots and results in the ignored `test-results/` directory. Eight scenarios cover desktop, wide desktop, native Chromium multi-touch, iPad-sized WebKit in both orientations, two phone sizes, dark appearance, and rotation during a grab. They check visible two-finger elongation, independently cancelled grips, collisions with the palm, coconut drops, all maps, state retention, real music playback where supported, music/effects independence, pause/resume, sound-node cleanup, layout, and canvas pixels.
+Browser checks capture screenshots and results in the ignored `test-results/` directory. Eight scenarios cover desktop, wide desktop, native Chromium multi-touch, iPad-sized WebKit in both orientations, two phone sizes, dark appearance, and rotation during a grab. They check quantified stretching, independent cancellation, palm impacts, map retention, camera travel, all four achievable objectives, music/effects independence, audio cleanup, layout, and nonblank animated canvas pixels.
 
-Thirteen physics tests cover settling, repeated throws, quantified stretching and recovery, buoyancy, narrow worlds, palm collisions and shaking, all maps, fallen-fruit identity across resizing, idle-sound suppression, the ring's open centre, and a weighted seesaw.
+Six additional living-world cases cover all three maps in Chromium and WebKit. Playwright's controlled clock advances actual animation frames through more than seven simulated minutes, without changing gameplay timers or exposing mutation controls. Real pointer input checks three-grip shaping, foreground travel and regrabbing, held expressions, habitat recovery, each species' voice where audio is available, every toy kind, and touch-responsive grass. Timelines check completed meals, cross-species play, pursuit/fleeing, natural comic events, interaction-triggered early events, finite bounded residents, cleanup, and no unearned objective progress.
+
+`npm test` discovers all simulation test files. Coverage includes elastic recovery, buoyancy, tree/toy geometry, idle-sound suppression, camera coordinates, shared floor/collision contours, substantial habitat journeys, depth picking, shadow projection, pose/bubble alignment, transition continuity, all objective positive/negative controls, and comic-event timing and attribution. See [DESIGN-V3.md](DESIGN-V3.md) for the design and research references.
 
 Windows Playwright WebKit has no Web Audio API, reports MP3 support without advancing playback, and cannot navigate local files while offline emulation is enabled. Its tests block external asset requests and assert the disabled-audio fallback. Chromium tests run disconnected and verify actual music playback and sound effects. These are browser-engine/emulation checks, not a claim of testing physical iPad hardware.
 
 ## Publish
 
-The repository is configured with **Settings > Pages > Source > GitHub Actions**. Push to `main`, or run **Deploy Blob Island** in Actions. The workflow installs pinned dependencies, runs the physics tests, builds the game, and publishes only `_site/index.html`. It does not publish the source tree, dependencies, or test artifacts separately; the HTML includes the audio recording and its notices.
+The repository is configured with **Settings > Pages > Source > GitHub Actions**. Push to `main`, or run **Deploy Blob Island** in Actions. The workflow installs pinned dependencies, runs all simulation tests, builds the game, and publishes only `_site/index.html`. Browser matrices are release checks run before publication and against the hosted artifact. The site does not publish the source tree, dependencies, or test artifacts separately; the HTML includes the audio recording and its notices.
 
 For another static host, upload only the built HTML and name it `index.html`. All URLs and resources are self-contained, so a project subpath works without a base-path setting.

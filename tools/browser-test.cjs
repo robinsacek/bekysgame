@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { chromium, webkit } = require('playwright');
+const { exerciseCoast } = require('./coast-browser.cjs');
 
 const root = path.resolve(__dirname, '..');
 const output = path.join(root, 'test-results');
@@ -43,7 +44,7 @@ async function layoutAndPixels(page) {
 }
 
 function screenPoint(state, viewport, point) {
-  return { x: point.x / state.width * viewport.width, y: point.y / state.height * viewport.height };
+  return { x: (point.x - state.camera.x) / state.camera.width * viewport.width, y: point.y / state.height * viewport.height };
 }
 
 function blobWidth(state) {
@@ -105,7 +106,7 @@ async function exercise(page, context, config) {
   await page.locator('#reset').click();
   const reset = await snapshot(page);
   assert.equal(reset.paused, false);
-  assert.ok(Math.abs(reset.blob.x / reset.width - 0.30) < 0.025, 'Reset must restore the jelly to the beach');
+  assert.ok(Math.abs(reset.blob.x - reset.spawn.x) < 15, 'Reset must restore Blobby to the fixed beach spawn');
   assert.equal(reset.props.length, reset.initialProps, 'Reset must restore exactly the current area\'s initial toys');
   if (reset.audioSupported) {
     await page.locator('#sound').click();
@@ -166,7 +167,7 @@ async function exerciseIslands(page, config) {
   const pools = await snapshot(page);
   assert.ok(pools.props.some(prop => prop.kind === 'shell'), 'Tide Pools must have sinking shells');
   await page.screenshot({ path: path.join(output, `${config.name}-pools.png`) });
-  const crown = screenPoint(pools, config.viewport, pools.tree.crown);
+  const crown = screenPoint(pools, config.viewport, pools.tree.hitTarget);
   await pointerEvent(page, 'pointerdown', 31, crown);
   assert.equal((await snapshot(page)).drags, 1, 'The visible palm must accept a touch');
   const shake = { x: crown.x + 150 * scale, y: crown.y + 35 * scale };
@@ -255,7 +256,8 @@ async function run() {
     { name: 'phone', engine: 'webkit', viewport: { width: 390, height: 844 }, touch: true },
     { name: 'small-phone', engine: 'webkit', viewport: { width: 320, height: 568 }, touch: true },
     { name: 'ipad-dark', engine: 'webkit', viewport: { width: 1180, height: 820 }, touch: true, theme: 'dark' },
-  ];
+  ].filter(config => !process.env.BLOB_CASES || process.env.BLOB_CASES.split(',').includes(config.name));
+  assert.ok(configurations.length > 0, 'The selector must execute at least one real browser scenario');
   for (const engineName of ['chromium', 'webkit']) {
     const browser = await ({ chromium, webkit }[engineName]).launch({ headless: true });
     try {
@@ -287,10 +289,30 @@ async function run() {
           }
           assert.equal((await snapshot(page)).audioState, 'not-created', 'Audio must wait for a user gesture');
           await page.screenshot({ path: path.join(output, `${config.name}.png`) });
-          await exercise(page, context, config);
-          await exerciseIslands(page, config);
-          const final = await layoutAndPixels(page);
-          assert.notEqual(initial.signature, final.signature, 'The canvas must actually animate');
+          if (process.env.BLOB_FEATURES !== 'coast') {
+            await exercise(page, context, config);
+            await exerciseIslands(page, config);
+          }
+          await exerciseCoast(page, config, output);
+          const animation = await page.evaluate(async () => {
+            const canvas = document.getElementById('world');
+            const context = canvas.getContext('2d');
+            const before = context.getImageData(0, 0, canvas.width, canvas.height).data;
+            const time = window.__blobIsland.snapshot().time;
+            await new Promise(resolve => {
+              let count = 0;
+              const advance = () => { count += 1; if (count >= 36) resolve(); else requestAnimationFrame(advance); };
+              requestAnimationFrame(advance);
+            });
+            const after = context.getImageData(0, 0, canvas.width, canvas.height).data;
+            let changedPixels = 0;
+            for (let offset = 0; offset < before.length; offset += 4) {
+              if (before[offset] !== after[offset] || before[offset + 1] !== after[offset + 1] || before[offset + 2] !== after[offset + 2]) changedPixels += 1;
+            }
+            return { changedPixels, elapsed: window.__blobIsland.snapshot().time - time };
+          });
+          assert.ok(animation.elapsed > 0, 'Animation checks must observe active simulation time');
+          assert.ok(animation.changedPixels > 10, `The canvas must actually animate between active frames: ${JSON.stringify(animation)}`);
           if (config.name === 'ipad-landscape' || config.name === 'tablet-native-touch') {
             const beforeRotation = await snapshot(page);
             const center = screenPoint(beforeRotation, config.viewport, beforeRotation.blob);
@@ -298,10 +320,14 @@ async function run() {
             assert.equal((await snapshot(page)).drags, 1, 'The rotation test must start with an active grab');
             const rotated = { width: config.viewport.height, height: config.viewport.width };
             await page.setViewportSize(rotated);
-            await page.waitForFunction(width => Math.abs(window.__blobIsland.snapshot().width - width) < 1, 900 * rotated.width / rotated.height);
+            await page.waitForFunction(width => Math.abs(window.__blobIsland.snapshot().camera.width - width) < 1, 900 * rotated.width / rotated.height);
             const afterRotation = await snapshot(page);
+            assert.equal(afterRotation.width, beforeRotation.width, 'Rotation must not rebuild or resize the physical world');
+            assert.deepEqual(afterRotation.props.map(prop => prop.id), beforeRotation.props.map(prop => prop.id), 'Rotation must preserve original object identities');
+            assert.deepEqual(afterRotation.creatures.map(creature => creature.id), beforeRotation.creatures.map(creature => creature.id));
             assert.equal(afterRotation.drags, 0, 'Rotation must release every active touch');
             assert.ok(Math.abs(afterRotation.blob.x / afterRotation.width - beforeRotation.blob.x / beforeRotation.width) < 0.045, 'Rotation must preserve the jelly location');
+            await frames(page, 3);
             const rotatedLayout = await layoutAndPixels(page);
             assert.equal(rotatedLayout.overflow, false);
             assert.equal(rotatedLayout.headerOverlap, false);
@@ -312,6 +338,13 @@ async function run() {
           assert.deepEqual(external, [], 'The game must not need external resources');
           const result = { name: config.name, engine: engineName, passed: true, colors: initial.colors, viewport: config.viewport, input: config.nativeTouch ? 'native multi-touch' : config.touch ? 'WebKit touch pointers and native tap' : 'mouse', networkMode: browserOffline ? 'browser-offline' : 'external-requests-blocked' };
           report.push(result); console.log(`PASS ${config.name}: ${result.input}, controls, pixels, self-contained assets`);
+        } catch (error) {
+          const failedPage = context.pages()[0];
+          if (failedPage) {
+            fs.writeFileSync(path.join(output, `${config.name}-failure.json`), JSON.stringify(await snapshot(failedPage), null, 2));
+            await failedPage.screenshot({ path: path.join(output, `${config.name}-failure.png`) });
+          }
+          throw error;
         } finally { await context.close(); }
       }
     } finally { await browser.close(); }

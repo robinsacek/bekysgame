@@ -1,8 +1,10 @@
 import { createElement, RotateCcw, Volume2, VolumeX, Pause, Play, Maximize, Minimize, Sun, Music2, AudioLines } from 'lucide';
 import { IslandPhysics, STEP } from './physics.js';
+import { CoastCamera, WORLD_WIDTH, WORLD_HEIGHT } from './camera.js';
 import { MAPS } from './maps.js';
 import { IslandScene } from './scene.js';
 import { IslandAudio } from './audio.js';
+import { ExplorationUI } from './exploration-ui.js';
 
 const canvas = document.getElementById('world');
 const container = document.getElementById('island');
@@ -10,11 +12,15 @@ const announcer = document.getElementById('announcer');
 const audio = new IslandAudio();
 const keys = new Set();
 const waterPointers = new Set();
+const pointers = new Map();
+const cameras = new Map();
 const state = { paused: false, resize: true, timestamp: 0, accumulator: 0, pointer: null, frames: 0, audioBusy: false, musicBusy: false, mapId: 'lagoon' };
 const islands = new Map();
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 let island;
 let scene;
+let camera;
+let exploration;
 
 function icon(element, glyph) {
   const symbol = createElement(glyph, { width: 20, height: 20, 'stroke-width': 1.7, 'aria-hidden': 'true' });
@@ -23,20 +29,25 @@ function icon(element, glyph) {
 
 function releaseAll() {
   island?.releaseAll(); keys.clear(); waterPointers.clear();
+  for (const pointerId of pointers.keys()) if (canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
+  pointers.clear();
   canvas.style.cursor = 'default';
 }
 
 function resizeWorld(preserve = true) {
   const bounds = container.getBoundingClientRect();
   if (bounds.width < 1 || bounds.height < 1) return;
-  const old = island;
   releaseAll();
-  const width = 900 * bounds.width / bounds.height;
+  const width = WORLD_HEIGHT * bounds.width / bounds.height;
   const ratio = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(5000000 / (bounds.width * bounds.height)));
   canvas.width = Math.round(bounds.width * ratio); canvas.height = Math.round(bounds.height * ratio);
-  island = new IslandPhysics(width, 900, state.mapId);
-  if (old && preserve) island.restoreFrom(old);
-  old?.dispose();
+  if (!island || !preserve) {
+    island?.dispose();
+    island = new IslandPhysics(WORLD_WIDTH, WORLD_HEIGHT, state.mapId, true);
+    camera = new CoastCamera(WORLD_WIDTH, width);
+    camera.find(island.spawn.x);
+    cameras.set(state.mapId, camera);
+  } else camera.resize(width);
   islands.set(state.mapId, island);
   scene = new IslandScene(canvas, island);
   state.resize = false; state.accumulator = 0; state.timestamp = 0;
@@ -55,22 +66,22 @@ function selectMap(mapId) {
   releaseAll();
   state.mapId = mapId;
   const bounds = container.getBoundingClientRect();
-  const width = 900 * bounds.width / bounds.height;
-  island = islands.get(mapId) || new IslandPhysics(width, 900, mapId);
-  if (Math.abs(island.width - width) > 0.5) {
-    const resized = new IslandPhysics(width, 900, mapId);
-    resized.restoreFrom(island); island.dispose(); island = resized;
-  }
+  const width = WORLD_HEIGHT * bounds.width / bounds.height;
+  island = islands.get(mapId) || new IslandPhysics(WORLD_WIDTH, WORLD_HEIGHT, mapId, true);
+  camera = cameras.get(mapId) || new CoastCamera(WORLD_WIDTH, width);
+  if (!cameras.has(mapId)) camera.find(island.spawn.x); else camera.resize(width);
+  cameras.set(mapId, camera);
   islands.set(mapId, island);
   scene = new IslandScene(canvas, island);
   state.pointer = null; state.timestamp = 0; state.accumulator = 0;
+  audio.clearEffects();
   updateMapControls();
   announcer.textContent = island.map.name;
 }
 
 function pointFromEvent(event) {
   const bounds = canvas.getBoundingClientRect();
-  return { x: (event.clientX - bounds.left) / bounds.width * island.width, y: (event.clientY - bounds.top) / bounds.height * island.height };
+  return camera.toWorld({ x: event.clientX - bounds.left, y: event.clientY - bounds.top }, bounds);
 }
 
 function onPointerDown(event) {
@@ -82,16 +93,28 @@ function onPointerDown(event) {
   state.pointer = point;
   const padding = (event.pointerType === 'mouse' ? 8 : 24) * island.height / canvas.getBoundingClientRect().height;
   const drag = island.grab(event.pointerId, point, Math.min(38, padding));
+  pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY, startX: event.clientX, lastX: event.clientX, kind: drag ? 'object' : 'background', panning: false });
   if (drag) {
-    canvas.style.cursor = 'grabbing'; audio.play(drag.kind === 'tree' ? 'rustle' : 'grab', 2, point.x / island.width * 2 - 1);
-  } else if (point.x > island.layout.waterStart && point.y > island.layout.water - 35 && point.y < island.layout.bottom) {
+    if (drag.kind === 'blob') camera.follow = true;
+    const material = { crate: 'wood', raft: 'wood', log: 'wood', driftwood: 'wood', coconut: 'wood', bottle: 'glass', shell: 'shell', conch: 'shell', stone: 'shell', pumice: 'shell', seedpod: 'rustle', swing: 'rustle', bell: 'chime' };
+    canvas.style.cursor = 'grabbing'; audio.play(drag.kind === 'tree' ? 'rustle' : drag.kind === 'creature' ? `voice-${drag.creature.species}` : material[drag.kind] || 'grab', 2, (point.x - camera.x) / camera.viewWidth * 2 - 1);
+  } else if (point.x > island.layout.waterStart && point.x < island.layout.waterEnd && point.y > island.layout.water - 35 && point.y < island.layout.bottom) {
     waterPointers.add(event.pointerId); island.splash(point.x, 2.5);
   }
+  if (!drag) island.wildlife?.foraging.touch(point);
   try { canvas.setPointerCapture(event.pointerId); } catch {}
 }
 
 function onPointerMove(event) {
   if (!island) return;
+  const pointer = pointers.get(event.pointerId);
+  if (pointer) {
+    if (pointer.kind === 'background' && !island.drags.size) {
+      if (Math.abs(event.clientX - pointer.startX) > 7) { pointer.panning = true; waterPointers.delete(event.pointerId); }
+      if (pointer.panning) camera.pan((pointer.lastX - event.clientX) / canvas.getBoundingClientRect().width * camera.viewWidth);
+    }
+    pointer.clientX = event.clientX; pointer.clientY = event.clientY; pointer.lastX = event.clientX;
+  }
   const point = pointFromEvent(event);
   state.pointer = point;
   island.move(event.pointerId, point);
@@ -103,6 +126,7 @@ function onPointerEnd(event) {
   const drag = island?.drags.get(event.pointerId);
   if (drag?.kind === 'blob' && event.type === 'pointerup') audio.play('release', 2);
   island?.release(event.pointerId); waterPointers.delete(event.pointerId);
+  pointers.delete(event.pointerId);
   if (island?.drags.size === 0) canvas.style.cursor = 'default';
   if (event.pointerType !== 'mouse' && island?.drags.size === 0) state.pointer = null;
 }
@@ -156,6 +180,14 @@ function frame(timestamp) {
     const elapsed = state.timestamp ? Math.min(100, timestamp - state.timestamp) : 0;
     state.timestamp = timestamp;
     if (!state.paused && !document.hidden) {
+      const bounds = canvas.getBoundingClientRect();
+      const grips = [...pointers.values()].filter(pointer => pointer.kind === 'object').map(pointer => (pointer.clientX - bounds.left) / bounds.width);
+      const panning = [...pointers.values()].some(pointer => pointer.panning);
+      if (!panning) camera.step(island.blobPosition().x, elapsed, grips);
+      for (const [pointerId, pointer] of pointers) {
+        if (pointer.kind !== 'object') continue;
+        const point = pointFromEvent(pointer); island.move(pointerId, point); state.pointer = point;
+      }
       state.accumulator += elapsed;
       while (state.accumulator >= STEP) {
         const horizontal = (keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0);
@@ -165,12 +197,17 @@ function frame(timestamp) {
         for (const splash of island.splashes.splice(0)) {
           scene.addSplash(splash);
         }
-        for (const sound of island.sounds.splice(0)) audio.play(sound.kind, sound.strength, sound.pan);
+        for (const sound of island.sounds.splice(0)) {
+          const positionX = sound.x ?? (sound.pan + 1) * island.width / 2;
+          const normalized = (positionX - camera.x) / camera.viewWidth;
+          if (normalized >= -0.15 && normalized <= 1.15) audio.play(sound.kind, sound.strength, normalized * 2 - 1);
+        }
       }
       const positions = island.blob.ring.map(particle => particle.position.x);
       audio.stretch((Math.max(...positions) - Math.min(...positions)) / 80, [...island.drags.values()].filter(drag => drag.kind === 'blob').length > 1);
     } else state.accumulator = 0;
-    scene.draw(island, island.time, state.pointer, reducedMotion.matches);
+    scene.draw(island, island.time, state.pointer, reducedMotion.matches, camera);
+    exploration.update();
     state.frames += 1;
     requestAnimationFrame(frame);
   } catch (error) {
@@ -220,12 +257,14 @@ try {
     state.resize = true;
   });
   window.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { exploration.showJournal(false); releaseAll(); }
     if (event.target.closest?.('button')) return;
-    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) { event.preventDefault(); keys.add(event.key); }
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) { event.preventDefault(); keys.add(event.key); camera.follow = true; }
     if (event.repeat) return;
     if (event.code === 'Space') { event.preventDefault(); setPaused(!state.paused); }
     if (event.key.toLowerCase() === 'r') reset();
     if (event.key.toLowerCase() === 'm') toggleSound();
+    if (event.key.toLowerCase() === 'f') exploration.find();
   });
   window.addEventListener('keyup', event => keys.delete(event.key));
   window.addEventListener('blur', releaseAll);
@@ -242,8 +281,9 @@ try {
     document.documentElement.dataset.theme = event.matches ? 'dark' : 'light'; state.resize = true;
   });
   resizeWorld(false);
+  exploration = new ExplorationUI(() => ({ island, camera, scene }), releaseAll, message => { announcer.textContent = message; });
   const favicon = document.createElement('link'); favicon.rel = 'icon'; favicon.href = document.getElementById('brand-mark').toDataURL(); document.head.append(favicon);
-  window.__blobIsland = Object.freeze({ snapshot: () => ({ ...island.snapshot(), version: 2, paused: state.paused, sound: audio.enabled, audioSupported: audio.supported, audioState: audio.context?.state || 'not-created', music: audio.musicEnabled, musicSupported: audio.musicSupported, musicPaused: audio.music.paused, musicTime: audio.music.currentTime, musicError: audio.music.error?.message || null, soundEvents: { ...audio.effectCounts }, activeVoices: audio.activeVoices, frames: state.frames, waterTouches: waterPointers.size }) });
+  window.__blobIsland = Object.freeze({ snapshot: () => ({ ...island.snapshot(), version: 3, camera: camera.snapshot(), paused: state.paused, sound: audio.enabled, audioSupported: audio.supported, audioState: audio.context?.state || 'not-created', music: audio.musicEnabled, musicSupported: audio.musicSupported, musicPaused: audio.music.paused, musicTime: audio.music.currentTime, musicError: audio.music.error?.message || null, soundEvents: { ...audio.effectCounts }, activeVoices: audio.activeVoices, frames: state.frames, waterTouches: waterPointers.size, pointerCount: pointers.size, sceneryPixels: scene.background.width * scene.background.height }) });
   requestAnimationFrame(frame);
 } catch (error) {
   showError(error);

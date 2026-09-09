@@ -1,15 +1,21 @@
 const Matter = require('matter-js');
 const { PalmTree } = require('./palm.js');
 const { MAPS } = require('./maps.js');
+const { buildCoast, floorAt } = require('./coast.js');
+const { Wildlife } = require('./wildlife.js');
+const { CoastObjectives } = require('./objectives.js');
+const { blobbyOutline } = require('./blobby-shape.js');
+const { setBodyDepth, advanceDepth } = require('./depth-space.js');
 
 const { Engine, Bodies, Body, Composite, Constraint, Vector, Vertices, Events } = Matter;
 const STEP = 1000 / 60;
 const clamp = (value, lower, upper) => Math.max(lower, Math.min(upper, value));
 
 class IslandPhysics {
-  constructor(width = 1440, height = 900, mapId = 'lagoon') {
+  constructor(width = 1440, height = 900, mapId = 'lagoon', expedition = false) {
     this.width = width;
     this.height = height;
+    this.expedition = expedition;
     this.map = MAPS.find(map => map.id === mapId) || MAPS[0];
     this.time = 0;
     this.drags = new Map();
@@ -20,11 +26,11 @@ class IslandPhysics {
     this.engine.gravity.y = 1;
     this.engine.gravity.scale = 0.001;
     this.layout = {
-      ground: height * this.map.ground,
-      water: height * this.map.water,
-      bottom: height * this.map.bottom,
-      shore: width * this.map.shore,
-      toe: width * this.map.toe,
+      ground: height * (this.map.ground - (expedition ? 0.18 : 0)),
+      water: height * (this.map.water - (expedition ? 0.18 : 0)),
+      bottom: height * (expedition ? 0.96 : this.map.bottom),
+      shore: width * (expedition ? this.map.coast.shore : this.map.shore),
+      toe: width * (expedition ? this.map.coast.toe : this.map.toe),
     };
     const { ground, water, bottom, shore, toe } = this.layout;
     this.layout.waterStart = shore + (toe - shore) * (water - ground) / (bottom - ground);
@@ -40,12 +46,15 @@ class IslandPhysics {
       Bodies.rectangle(width / 2, -90, width + 200, 100, { ...terrainOptions, label: 'boundary' }),
     ];
     Composite.add(this.engine.world, this.terrain);
-    this.makeBlob(width * 0.30, ground - 92);
+    this.spawn = { x: expedition ? Math.min(520, width * 0.30) : width * 0.30, y: ground - 92 };
+    this.makeBlob(this.spawn.x, this.spawn.y);
     this.props = [];
     const objectScale = clamp(width / 1000, 0.73, 1);
     for (const toy of this.map.toys) {
       const margin = (toy.radius || toy.width / 2) * objectScale + 5;
-      this.addProp(toy.kind, clamp(width * toy.x, margin, width - margin), (toy.onLand ? ground : water) - toy.elevation,
+      const positionX = expedition && !toy.onLand ? this.layout.waterStart + 85 + clamp((toy.x - 0.45) / 0.55, 0, 1) * (width * 0.82 - this.layout.waterStart - 170)
+        : expedition && toy.onLand && toy.kind === 'crate' ? width * 0.145 : width * toy.x;
+      this.addProp(toy.kind, clamp(positionX, margin, width - margin), (toy.onLand ? ground : water) - toy.elevation,
         { ...toy, radius: toy.radius ? toy.radius * objectScale : undefined, width: toy.width ? toy.width * objectScale : undefined, height: toy.height ? toy.height * objectScale : undefined });
     }
     this.rocks = this.map.rocks.map(rock => Bodies.trapezoid(width * rock.x, water - rock.elevation, rock.width * objectScale, rock.height, 0.35, { ...terrainOptions, label: 'rock' }));
@@ -53,10 +62,18 @@ class IslandPhysics {
     const waveCount = clamp(Math.round((width - this.layout.waterStart) / 12), 28, 96);
     this.waves = Array.from({ length: waveCount }, () => ({ offset: 0, velocity: 0 }));
     this.tree = new PalmTree(this);
+    if (expedition) {
+      setBodyDepth(this.tree.body, 0);
+      for (const fruit of this.tree.fruits) setBodyDepth(fruit.body, 0);
+      buildCoast(this); this.wildlife = new Wildlife(this); this.objectives = new CoastObjectives(this);
+    }
+    this.initialPropCount = this.props.length;
     Events.on(this.engine, 'collisionStart', event => {
       for (const pair of event.pairs) {
         const first = pair.bodyA.parent;
         const second = pair.bodyB.parent;
+        if (first.label.startsWith('creature:') || second.label.startsWith('creature:')) continue;
+        if (first.isSensor || second.isSensor) continue;
         if (first.label === 'palm' || second.label === 'palm') continue;
         if (this.tree.fruits.some(fruit => fruit.attached && (fruit.body === first || fruit.body === second))) continue;
         const relative = Vector.sub(first.velocity, second.velocity);
@@ -74,10 +91,8 @@ class IslandPhysics {
     const particleRadius = 6.2;
     const group = Body.nextGroup(true);
     const options = { friction: 0.62, frictionAir: 0.016, restitution: 0.46, slop: 0.04, collisionFilter: { group }, label: 'jelly' };
-    const ring = Array.from({ length: 24 }, (_, index) => {
-      const angle = index / 24 * Math.PI * 2;
-      const lobe = 1 + Math.sin(angle * 3 + 0.4) * 0.10 + Math.cos(angle * 5) * 0.045;
-      const particle = Bodies.circle(positionX + Math.cos(angle) * radius * 1.18 * lobe, positionY + Math.sin(angle) * radius * 0.88 * lobe, particleRadius, options);
+    const ring = blobbyOutline(positionX, positionY).map(point => {
+      const particle = Bodies.circle(point.x, point.y, particleRadius, options);
       Body.setMass(particle, 0.05);
       return particle;
     });
@@ -92,15 +107,17 @@ class IslandPhysics {
         links.push(Constraint.create({ bodyA: ring[index], bodyB: ring[index + ring.length / 2], stiffness: 0.0015, damping: 0.035, relaxedStiffness: 0.014, stretchedStiffness: 0.0015 }));
       }
     }
-    this.blob = { ring, center, radius: radius * 1.18 + particleRadius, particleRadius, particles: [...ring, center], links,
+    this.blob = { ring, center, radius: radius * 1.18 + particleRadius, particleRadius, particles: [...ring, center], links, depth: 0, depthTarget: 0,
       softness: 0, restArea: Vertices.area(ring.map(particle => particle.position)) };
+    if (this.expedition) for (const body of this.blob.particles) setBodyDepth(body, 0);
     Composite.add(this.engine.world, [...this.blob.particles, ...links]);
   }
 
   pressurizeBlob() {
     const { ring, restArea } = this.blob;
-    const stretching = [...this.drags.values()].filter(drag => drag.kind === 'blob').length > 1;
-    this.blob.softness += ((stretching ? 1 : 0) - this.blob.softness) * 0.16;
+    const grips = [...this.drags.values()].filter(drag => drag.kind === 'blob');
+    const softness = grips.length > 1 ? 1 : grips.length === 1 && Vector.magnitude(Vector.sub(grips[0].target, this.blobPosition())) > 65 ? 0.28 : 0;
+    this.blob.softness += (softness - this.blob.softness) * 0.16;
     for (const link of this.blob.links) link.stiffness = link.relaxedStiffness + (link.stretchedStiffness - link.relaxedStiffness) * this.blob.softness;
     const area = Vertices.area(ring.map(particle => particle.position), true);
     const pressure = clamp((restArea - area) / restArea, -0.70, 1.2) * 0.0012;
@@ -122,11 +139,12 @@ class IslandPhysics {
         const angle = index / 16 * Math.PI * 2;
         return Bodies.circle(positionX + Math.cos(angle) * settings.radius * 0.77, positionY + Math.sin(angle) * settings.radius * 0.77, settings.radius * 0.235);
       });
-      body = Body.create({ ...options, parts });
+      body = Body.create({ ...options, parts, collisionFilter: { group: Body.nextGroup(true) } });
     }
     Body.setMass(body, settings.mass);
     if (kind === 'ring') Body.setInertia(body, settings.mass * settings.radius * settings.radius * 2);
-    const prop = { kind, body, ...settings, submerged: 0 };
+    const prop = { kind, body, ...settings, submerged: 0, depth: 0, depthTarget: 0 };
+    if (this.expedition) setBodyDepth(body, 0);
     this.props.push(prop);
     Composite.add(this.engine.world, body);
     if (settings.hinged) {
@@ -139,6 +157,10 @@ class IslandPhysics {
   blobPosition() {
     const center = this.blob.ring.reduce((total, body) => ({ x: total.x + body.position.x, y: total.y + body.position.y }), { x: 0, y: 0 });
     return { x: center.x / this.blob.ring.length, y: center.y / this.blob.ring.length };
+  }
+
+  floorAt(positionX) {
+    return floorAt(this, positionX);
   }
 
   restoreFrom(previous) {
@@ -180,14 +202,14 @@ class IslandPhysics {
 
   surfaceAt(positionX) {
     if (!this.waves) return this.layout.water;
-    const waveIndex = clamp((positionX - this.layout.waterStart) / (this.width - this.layout.waterStart) * (this.waves.length - 1), 0, this.waves.length - 1);
+    const waveIndex = clamp((positionX - this.layout.waterStart) / ((this.layout.waterEnd || this.width) - this.layout.waterStart) * (this.waves.length - 1), 0, this.waves.length - 1);
     const lower = Math.floor(waveIndex);
     const upper = Math.min(lower + 1, this.waves.length - 1);
     return this.layout.water + this.waves[lower].offset * (1 - waveIndex + lower) + this.waves[upper].offset * (waveIndex - lower);
   }
 
   circleImmersion(position, radius) {
-    if (position.x + radius < this.layout.waterStart) return 0;
+    if (position.x + radius < this.layout.waterStart || position.x - radius > (this.layout.waterEnd || this.width)) return 0;
     const heightRatio = clamp((this.surfaceAt(position.x) - position.y) / radius, -1, 1);
     const horizontalFraction = clamp((position.x + radius - this.layout.waterStart) / (radius * 2), 0, 1);
     return (Math.acos(heightRatio) - heightRatio * Math.sqrt(1 - heightRatio * heightRatio)) / Math.PI * horizontalFraction;
@@ -227,8 +249,9 @@ class IslandPhysics {
   }
 
   splash(positionX, strength) {
-    if (positionX < this.layout.waterStart || positionX > this.width) return;
-    const index = Math.round((positionX - this.layout.waterStart) / (this.width - this.layout.waterStart) * (this.waves.length - 1));
+    const waterEnd = this.layout.waterEnd || this.width;
+    if (positionX < this.layout.waterStart || positionX > waterEnd) return;
+    const index = Math.round((positionX - this.layout.waterStart) / (waterEnd - this.layout.waterStart) * (this.waves.length - 1));
     for (let offset = -2; offset <= 2; offset += 1) {
       const wave = this.waves[index + offset];
       if (wave) wave.velocity += strength * (1 - Math.abs(offset) / 3) * 0.40;
@@ -241,10 +264,26 @@ class IslandPhysics {
     const cooldown = kind === 'rustle' ? 550 : kind === 'splash' ? 220 : 180;
     if (this.time - (this.soundTimes.get(kind) ?? -Infinity) < cooldown) return;
     this.soundTimes.set(kind, this.time);
-    if (this.sounds.length < 20) this.sounds.push({ kind, strength, pan: clamp(positionX / this.width * 2 - 1, -0.8, 0.8), time: this.time });
+    if (this.sounds.length < 20) this.sounds.push({ kind, strength, x: positionX, pan: clamp(positionX / this.width * 2 - 1, -0.8, 0.8), time: this.time });
+  }
+
+  skipStone(prop) {
+    if (prop.kind !== 'stone') return;
+    const body = prop.body;
+    const surface = this.surfaceAt(body.position.x);
+    if (body.position.y + prop.radius < surface - 14) prop.skipReady = true;
+    if (!prop.playerHandled || !prop.skipReady || body.position.x < this.layout.waterStart || body.position.x > (this.layout.waterEnd || this.width)) return;
+    if (body.position.y + prop.radius < surface || body.position.y > surface + prop.radius) return;
+    if (Math.abs(body.velocity.x) < 4.5 || body.velocity.y < 0.2 || body.velocity.y > Math.abs(body.velocity.x) * 0.8) return;
+    prop.skipReady = false;
+    prop.skips = (prop.skips || 0) + 1;
+    Body.setVelocity(body, { x: body.velocity.x * 0.80, y: -Math.min(5.5, 1.5 + Math.abs(body.velocity.x) * 0.30) });
+    this.splash(body.position.x, 2.5);
   }
 
   pick(point, padding = 0) {
+    const foreground = this.wildlife?.pick(point, 0);
+    const blobPoint = { x: point.x, y: point.y - this.blob.depth };
     const occupied = new Set([...this.drags.values()].filter(drag => drag.kind === 'blob').map(drag => drag.body));
     let nearestParticle;
     let nearestDistance = Infinity;
@@ -254,22 +293,37 @@ class IslandPhysics {
       const particle = this.blob.ring[index];
       const next = this.blob.ring[(index + 1) % this.blob.ring.length].position;
       const current = particle.position;
-      if ((current.y > point.y) !== (next.y > point.y) && point.x < (next.x - current.x) * (point.y - current.y) / (next.y - current.y) + current.x) inside = !inside;
-      const distance = Vector.magnitude(Vector.sub(point, particle.position));
+      if ((current.y > blobPoint.y) !== (next.y > blobPoint.y) && blobPoint.x < (next.x - current.x) * (blobPoint.y - current.y) / (next.y - current.y) + current.x) inside = !inside;
+      const distance = Vector.magnitude(Vector.sub(blobPoint, particle.position));
       skinDistance = Math.min(skinDistance, distance);
       if (!occupied.has(particle) && distance < nearestDistance) {
         nearestDistance = distance;
         nearestParticle = particle;
       }
     }
-    if (nearestParticle && (inside || skinDistance <= this.blob.particleRadius + padding)) return { body: nearestParticle, kind: 'blob' };
-    for (const prop of [...this.props].reverse()) {
-      const local = Vector.rotate(Vector.sub(point, prop.body.position), -prop.body.angle);
-      const hit = prop.radius
-        ? Vector.magnitude(local) <= prop.radius + padding
-        : Math.abs(local.x) <= prop.width / 2 + padding && Math.abs(local.y) <= prop.height / 2 + padding;
-      if (hit) return { body: prop.body, kind: prop.kind };
-    }
+    const pickProps = margin => {
+      for (const prop of [...this.props].reverse().sort((first, second) => (second.depth || 0) - (first.depth || 0))) {
+        const local = Vector.rotate(Vector.sub({ x: point.x, y: point.y - (prop.depth || 0) }, prop.body.position), -prop.body.angle);
+        const hit = prop.radius ? Vector.magnitude(local) <= prop.radius + margin
+          : Math.abs(local.x) <= prop.width / 2 + margin && Math.abs(local.y) <= prop.height / 2 + margin;
+        if (hit) return { body: prop.body, kind: prop.kind, prop };
+      }
+      return null;
+    };
+    const exactBlob = nearestParticle && (inside || skinDistance <= this.blob.particleRadius) ? { body: nearestParticle, kind: 'blob' } : null;
+    const exactProp = pickProps(0);
+    const exactCreature = foreground ? { body: foreground.body, kind: 'creature', creature: foreground } : null;
+    const front = [exactCreature, exactBlob, exactProp].filter(Boolean).filter(picked => this.dragDepth(picked) > 18).sort((first, second) => this.dragDepth(second) - this.dragDepth(first))[0];
+    if (front) return front;
+    if (exactBlob) return exactBlob;
+    if (foreground) return { body: foreground.body, kind: 'creature', creature: foreground };
+    if (exactProp) return exactProp;
+    if (this.tree.pick(point, 0)) return { body: this.tree.body, kind: 'tree' };
+    if (nearestParticle && skinDistance <= this.blob.particleRadius + padding) return { body: nearestParticle, kind: 'blob' };
+    const paddedProp = pickProps(padding);
+    if (paddedProp) return paddedProp;
+    const paddedCreature = this.wildlife?.pick(point, padding);
+    if (paddedCreature) return { body: paddedCreature.body, kind: 'creature', creature: paddedCreature };
     if (this.tree.pick(point, padding)) return { body: this.tree.body, kind: 'tree' };
     return null;
   }
@@ -278,8 +332,13 @@ class IslandPhysics {
     if (this.drags.has(pointerId)) this.release(pointerId);
     const picked = this.pick(point, padding);
     if (!picked) return null;
-    const localPoint = picked.kind === 'blob' ? { x: 0, y: 0 } : Vector.rotate(Vector.sub(point, picked.body.position), -picked.body.angle);
-    const constraint = Constraint.create({ pointA: { ...point }, bodyB: picked.body, pointB: Vector.rotate(localPoint, picked.body.angle), length: 0, stiffness: picked.kind === 'blob' ? 0.24 : 0.065, damping: 0.12 });
+    if (picked.creature) picked.creature.held = true;
+    if (picked.kind === 'blob') this.blobHandled = true;
+    const prop = this.props.find(item => item.body === picked.body);
+    if (prop) prop.playerHandled = true;
+    const anchorPoint = { x: point.x, y: point.y - this.dragDepth(picked) };
+    const localPoint = picked.kind === 'blob' ? { x: 0, y: 0 } : Vector.rotate(Vector.sub(anchorPoint, picked.body.position), -picked.body.angle);
+    const constraint = Constraint.create({ pointA: anchorPoint, bodyB: picked.body, pointB: Vector.rotate(localPoint, picked.body.angle), length: 0, stiffness: picked.kind === 'blob' ? 0.24 : 0.065, damping: 0.12 });
     const drag = { ...picked, constraint, target: { ...point }, start: { ...point } };
     this.drags.set(pointerId, drag);
     Composite.add(this.engine.world, constraint);
@@ -288,6 +347,15 @@ class IslandPhysics {
 
   move(pointerId, point) {
     const drag = this.drags.get(pointerId);
+    const landResident = drag?.creature && ['crab', 'tortoise', 'lizard', 'rabbit'].includes(drag.creature.species);
+    const looseProp = drag?.prop && !drag.prop.anchor && !drag.prop.ropes;
+    const blob = drag?.kind === 'blob' && [...this.drags.values()].filter(item => item.kind === 'blob').length === 1;
+    if (this.expedition && (landResident || looseProp || blob)) {
+      const item = landResident ? drag.creature : looseProp ? drag.prop : this.blob;
+      const halfHeight = landResident ? item.height * 0.41 : looseProp ? item.radius || item.height / 2 : 38;
+      const floor = this.floorAt(point.x);
+      item.depthTarget = floor < this.layout.water - 8 ? clamp(point.y - floor + halfHeight, 0, this.map.ecology.depth) : 0;
+    }
     if (drag) drag.target = { x: clamp(point.x, 8, this.width - 8), y: clamp(point.y, 35, this.height - 40) };
   }
 
@@ -296,20 +364,37 @@ class IslandPhysics {
     if (!drag) return;
     Composite.remove(this.engine.world, drag.constraint);
     this.drags.delete(pointerId);
+    if (drag.creature) drag.creature.held = [...this.drags.values()].some(item => item.body === drag.body);
   }
 
   releaseAll() {
     for (const pointerId of [...this.drags.keys()]) this.release(pointerId);
   }
 
-  nudge(horizontal, vertical) {
+  dragDepth(drag) { return drag.kind === 'blob' ? this.blob.depth : drag.creature?.depth || drag.prop?.depth || 0; }
+
+  updateDepth() {
+    if (!this.expedition) return;
+    for (const item of [this.blob, ...this.props]) {
+      const position = item.body?.position || this.blobPosition();
+      if (this.floorAt(position.x) >= this.layout.water - 8) item.depthTarget = 0;
+      advanceDepth(item, this.map.ecology.depth);
+      for (const body of item.particles || [item.body]) setBodyDepth(body, item.depth);
+    }
+    for (const drag of this.drags.values()) if (drag.creature) advanceDepth(drag.creature, this.map.ecology.depth);
+  }
+
+  nudge(horizontal, vertical, playerAction = true) {
+    if (playerAction && (horizontal || vertical)) this.blobHandled = true;
     for (const particle of this.blob.particles) Body.applyForce(particle, particle.position, { x: horizontal * particle.mass * 0.0013, y: vertical * particle.mass * 0.0025 });
   }
 
   step() {
     this.time += STEP;
+    this.updateDepth();
     for (const drag of this.drags.values()) {
-      const delta = Vector.sub(drag.target, drag.constraint.pointA);
+      const target = { x: drag.target.x, y: drag.target.y - this.dragDepth(drag) };
+      const delta = Vector.sub(target, drag.constraint.pointA);
       const length = Vector.magnitude(delta);
       const amount = Math.min(1, 24 / Math.max(length, 0.001));
       drag.constraint.pointA.x += delta.x * amount;
@@ -317,9 +402,25 @@ class IslandPhysics {
     }
     this.pressurizeBlob();
     this.tree.step();
+    this.wildlife?.step();
     for (const particle of this.blob.particles) this.floatBody(particle, 0.87, particle.circleRadius);
-    for (const prop of this.props) prop.submerged = this.floatBody(prop.body, prop.density, prop.radius, prop.width, prop.height);
+    for (const prop of this.props) {
+      this.skipStone(prop);
+      prop.submerged = this.floatBody(prop.body, prop.density, prop.radius, prop.width, prop.height);
+      if (prop.kind === 'bell' && prop.playerHandled && Vector.magnitude(prop.body.velocity) > 1.1 && this.time - (prop.chimedAt || -10000) > 1100) {
+        this.queueSound('chime', 1.5, prop.body.position.x); prop.chimedAt = this.time;
+      }
+      if (this.landmarks && prop.playerHandled && Math.abs(prop.body.velocity.y) < 0.9 && ![...this.drags.values()].some(drag => drag.body === prop.body)) {
+        const softGround = [this.landmarks.picnic, this.landmarks.nook].some(place => Math.abs(prop.body.position.x - place.x) < place.radius && Math.abs(prop.body.bounds.max.y - place.y) < 6);
+        if (softGround) {
+          Body.setVelocity(prop.body, { x: prop.body.velocity.x * 0.88, y: prop.body.velocity.y });
+          Body.setAngularVelocity(prop.body, prop.body.angularVelocity * 0.85);
+        }
+      }
+    }
     Engine.update(this.engine, STEP);
+    this.wildlife?.afterStep();
+    this.objectives?.step();
     for (const body of [...this.blob.particles, ...this.props.map(prop => prop.body)]) {
       const speed = Vector.magnitude(body.velocity);
       if (speed > 28) Body.setVelocity(body, Vector.mult(body.velocity, 28 / speed));
@@ -339,12 +440,19 @@ class IslandPhysics {
     const center = this.blobPosition();
     return {
       width: this.width, height: this.height, time: this.time, water: this.layout.water, ground: this.layout.ground,
-      map: this.map.id, initialProps: this.map.toys.length,
-      blob: { ...center, radius: this.blob.radius, area: Vertices.area(this.blob.ring.map(body => body.position)), velocity: { ...this.blob.center.velocity }, particles: this.blob.ring.map(body => ({ ...body.position })) },
-      props: this.props.map(prop => ({ kind: prop.kind, x: prop.body.position.x, y: prop.body.position.y, angle: prop.body.angle, radius: prop.radius, width: prop.width, height: prop.height, submerged: prop.submerged, palmSlot: prop.palmSlot })),
+      map: this.map.id, initialProps: this.initialPropCount, spawn: this.spawn, landmarks: this.landmarks,
+      coast: { shore: this.layout.shore, toe: this.layout.toe, farToe: this.layout.farToe, farShore: this.layout.farShore, waterStart: this.layout.waterStart, waterEnd: this.layout.waterEnd, bank: this.map.coast.bank },
+      blob: { ...center, y: center.y + this.blob.depth, physicalY: center.y, depth: this.blob.depth, name: 'Blobby', radius: this.blob.radius, area: Vertices.area(this.blob.ring.map(body => body.position)), velocity: { ...this.blob.center.velocity }, particles: this.blob.ring.map(body => ({ x: body.position.x, y: body.position.y + this.blob.depth })) },
+      props: this.props.map(prop => ({ id: prop.body.id, kind: prop.kind, x: prop.body.position.x, y: prop.body.position.y + (prop.depth || 0), physicalY: prop.body.position.y, depth: prop.depth || 0, angle: prop.body.angle, radius: prop.radius, width: prop.width, height: prop.height, submerged: prop.submerged, palmSlot: prop.palmSlot, expeditionId: prop.expeditionId, playerHandled: Boolean(prop.playerHandled) })),
       tree: this.tree.snapshot(),
+      creatures: this.wildlife?.snapshot(), encounters: this.wildlife?.encounters, encounterCounts: this.wildlife?.encounterCounts,
+      objectives: this.objectives?.snapshot(),
+      comedy: this.wildlife?.comedy.snapshot(),
+      foodPatches: this.wildlife?.foraging.snapshot(),
+      playEffects: this.wildlife?.interactions.effects.map(effect => ({ ...effect })),
       drags: this.drags.size,
-      finite: [...this.blob.particles, ...this.props.map(prop => prop.body), this.tree.body, ...this.tree.fruits.map(fruit => fruit.body)].every(body => Number.isFinite(body.position.x) && Number.isFinite(body.position.y)),
+      grips: [...this.drags.entries()].map(([pointerId, drag]) => ({ pointerId, kind: drag.kind, bodyId: drag.body.id, target: { ...drag.target } })),
+      finite: [...this.blob.particles, ...this.props.map(prop => prop.body), this.tree.body, ...this.tree.fruits.map(fruit => fruit.body), ...(this.wildlife?.residents.map(resident => resident.body) || [])].every(body => Number.isFinite(body.position.x) && Number.isFinite(body.position.y)),
     };
   }
 

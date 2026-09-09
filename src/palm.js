@@ -5,7 +5,7 @@ class PalmTree {
     this.island = island;
     this.scale = Math.max(0.69, Math.min(1, island.width / 1300));
     this.base = { x: island.width * 0.105, y: island.layout.ground - 8 };
-    this.height = island.map.palmHeight;
+    this.height = island.expedition ? Math.min(245, island.map.palmHeight) : island.map.palmHeight;
     this.lean = island.map.palmLean;
     this.lastDrop = -1000;
     this.impacts = 0;

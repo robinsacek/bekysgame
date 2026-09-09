@@ -1,13 +1,15 @@
 {
   "name": "blob-island",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "description": "A self-contained, touch-friendly tropical soft-body physics playground.",
   "scripts": {
     "build": "node tools/build.cjs",
-    "test": "node --test src/physics.test.js",
+    "test": "node tools/test.cjs",
     "pretest:browser": "node tools/build.cjs",
-    "test:browser": "node tools/browser-test.cjs"
+    "test:browser": "node tools/browser-test.cjs",
+    "pretest:living": "node tools/build.cjs",
+    "test:living": "node tools/living-browser.cjs"
   },
   "engines": {
     "node": ">=20"

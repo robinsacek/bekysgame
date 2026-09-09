@@ -218,7 +218,11 @@ test('settled islands do not repeatedly emit splash sounds but new water entries
     assert.equal(idleSplashes, 0, `${mapId} must remain free of repetitive idle splash sounds`);
     assert.equal(idleSounds, 0, `${mapId} must not make impact sounds while idle`);
     const ball = island.props.find(prop => prop.kind === 'ball');
-    Body.setPosition(ball.body, { x: island.width * 0.74, y: island.layout.water - 160 });
+    const obstacles = [...island.rocks, ...island.props.filter(prop => prop !== ball).map(prop => prop.body)];
+    const clearWater = Array.from({ length: 30 }, (_, index) => island.layout.waterStart + ball.radius * 2 + index / 29 * (island.width - island.layout.waterStart - ball.radius * 4)).find(positionX =>
+      Query.region(obstacles, { min: { x: positionX - ball.radius - 4, y: island.layout.water - 190 }, max: { x: positionX + ball.radius + 4, y: island.layout.water + ball.radius } }).length === 0);
+    assert.ok(Number.isFinite(clearWater), 'The splash fixture must have a real unobstructed water-entry path');
+    Body.setPosition(ball.body, { x: clearWater, y: island.layout.water - 160 });
     Body.setVelocity(ball.body, { x: 0, y: 0 });
     advance(island, 90);
     assert.ok(island.splashes.some(splash => splash.strength > 0.9), 'A new throw into the water must still splash');

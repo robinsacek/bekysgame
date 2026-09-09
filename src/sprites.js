@@ -1,10 +1,12 @@
+import { drawMapObject } from './map-art.js';
+
 const TAU = Math.PI * 2;
 
 export function drawProp(art, context, prop) {
   const { paint, mix, oval } = art;
   const { paper, ink, blue, pink, yellow, green, wood } = art.colors;
   const { body, kind, radius, width, height } = prop;
-  context.save(); context.translate(body.position.x, body.position.y); context.rotate(body.angle);
+  context.save(); context.translate(body.position.x, body.position.y + (prop.depth || 0)); context.rotate(body.angle);
   if (kind === 'ball') {
     oval(context, 0, 0, radius, radius, paint(paper));
     [pink, yellow, blue].forEach((color, index) => {
@@ -26,6 +28,20 @@ export function drawProp(art, context, prop) {
     }
     context.strokeStyle = paint(paper, 0.76); context.lineWidth = 2;
     context.beginPath(); context.arc(0, 0, radius * 0.85, Math.PI * 1.12, Math.PI * 1.72); context.stroke();
+  } else if (kind === 'stone') {
+    const rock = context.createRadialGradient(-radius * 0.35, -radius * 0.45, 1, 0, 0, radius);
+    rock.addColorStop(0, paint(mix(paper, ink, 0.35))); rock.addColorStop(1, paint(mix(ink, paper, 0.37)));
+    oval(context, 0, 0, radius, radius * 0.85, rock);
+    oval(context, -radius * 0.2, -radius * 0.3, radius * 0.45, radius * 0.12, paint(paper, 0.32), -0.2);
+  } else if (kind === 'swing') {
+    const leaf = context.createLinearGradient(0, -height, 0, height);
+    leaf.addColorStop(0, paint(mix(green, yellow, 0.22))); leaf.addColorStop(1, paint(mix(green, ink, 0.27)));
+    context.fillStyle = leaf; context.beginPath(); context.moveTo(-width / 2, 0);
+    context.bezierCurveTo(-width * 0.28, -height, width * 0.22, -height, width / 2, 0);
+    context.quadraticCurveTo(0, height * 0.95, -width / 2, 0); context.fill();
+    context.strokeStyle = paint(mix(yellow, paper, 0.18), 0.55); context.lineWidth = 1;
+    context.beginPath(); context.moveTo(-width * 0.42, 0); context.lineTo(width * 0.42, 0); context.stroke();
+    for (let index = -3; index <= 3; index += 1) { context.beginPath(); context.moveTo(index * 10, 0); context.lineTo(index * 10 - 6, -height * 0.44); context.stroke(); }
   } else if (kind === 'crate') {
     context.fillStyle = paint(mix(wood, yellow, 0.36)); context.fillRect(-width / 2, -height / 2, width, height);
     context.strokeStyle = paint(mix(wood, ink, 0.15)); context.lineWidth = 1.8;
@@ -36,6 +52,8 @@ export function drawProp(art, context, prop) {
     context.strokeRect(-width / 2 + 2, -height / 2 + 2, width - 4, height - 4);
     context.beginPath(); context.moveTo(-width / 2 + 3, -height / 2 + 3); context.lineTo(width / 2 - 3, height / 2 - 3); context.stroke();
     for (const cornerX of [-1, 1]) for (const cornerY of [-1, 1]) oval(context, cornerX * (width / 2 - 4), cornerY * (height / 2 - 4), 1.1, 1.1, paint(ink, 0.7));
+    context.strokeStyle = paint(ink, 0.13); context.lineWidth = 0.6;
+    for (let grain = 0; grain < 7; grain += 1) { const elevation = -height * 0.37 + grain * height * 0.12; context.beginPath(); context.moveTo(-width * 0.36, elevation); context.bezierCurveTo(-4, elevation - 1.5, 4, elevation + 1.5, width * 0.36, elevation); context.stroke(); }
   } else if (kind === 'shell') {
     const shell = context.createRadialGradient(-radius * 0.3, -radius * 0.2, 1, 0, 0, radius);
     shell.addColorStop(0, paint(paper)); shell.addColorStop(1, paint(mix(pink, paper, 0.60)));
@@ -53,6 +71,8 @@ export function drawProp(art, context, prop) {
       context.fillStyle = log; context.fillRect(-width / 2, top, width, height / 3 - 0.4);
       oval(context, -width / 2, top + height / 6, 3.2, height / 6, paint(mix(wood, paper, 0.32)));
       oval(context, width / 2, top + height / 6, 3.2, height / 6, paint(mix(wood, paper, 0.48)));
+      context.strokeStyle = paint(ink, 0.14); context.lineWidth = 0.65;
+      for (const joint of [-0.14, 0.19]) { context.beginPath(); context.moveTo(width * joint, top + 1); context.lineTo(width * joint + 1.5, top + height / 3 - 1); context.stroke(); }
     }
     for (const offset of [-0.30, 0.30]) {
       context.strokeStyle = paint(mix(wood, ink, 0.32)); context.lineWidth = 2;
@@ -70,6 +90,8 @@ export function drawProp(art, context, prop) {
       context.quadraticCurveTo(index * radius * 0.55 - 7, 0, index * radius * 0.26, radius * 0.87); context.stroke();
     }
     for (const [offsetX, offsetY] of [[-4, -7], [3, -6], [-1, 0]]) oval(context, offsetX, offsetY, 2, 2.4, paint(ink, 0.52));
+    context.strokeStyle = paint(paper, 0.16); context.lineWidth = 0.45;
+    for (let fiber = 0; fiber < 18; fiber += 1) { const angle = fiber / 18 * TAU; context.beginPath(); context.moveTo(Math.cos(angle) * radius * 0.63, Math.sin(angle) * radius * 0.63); context.lineTo(Math.cos(angle + 0.035) * radius * 0.88, Math.sin(angle + 0.035) * radius * 0.88); context.stroke(); }
   } else if (kind === 'bottle') {
     context.fillStyle = paint(mix(green, blue, 0.40), 0.38); context.strokeStyle = paint(mix(green, ink, 0.26), 0.7); context.lineWidth = 1.3;
     context.beginPath(); context.moveTo(-width * 0.23, -height / 2); context.lineTo(width * 0.23, -height / 2);
@@ -81,7 +103,7 @@ export function drawProp(art, context, prop) {
     context.fillStyle = paint(mix(paper, yellow, 0.17), 0.88); context.fillRect(-width * 0.24, 0, width * 0.48, height * 0.36);
     context.fillStyle = paint(wood); context.fillRect(-width * 0.26, -height / 2, width * 0.52, 6);
     context.fillStyle = paint(paper, 0.73); context.fillRect(-width * 0.29, -height * 0.13, 1.8, height * 0.42);
-  }
+  } else drawMapObject(art, context, prop);
   context.restore();
 }
 
@@ -110,8 +132,8 @@ export function drawBlob(art, context, island, time, pointer, delta) {
   const gradient = context.createLinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom);
   const rim = context.createLinearGradient(bounds.left, bounds.bottom, bounds.right, bounds.top);
   art.rainbow.forEach((color, index) => {
-    gradient.addColorStop(index / 6, paint(color, 0.10));
-    rim.addColorStop(index / 6, paint(mix(color, paper, 0.12), 0.90));
+    gradient.addColorStop(index / 6, paint(mix(color, paper, 0.13), 0.44));
+    rim.addColorStop(index / 6, paint(mix(color, paper, 0.12), 0.78));
   });
   blobPath(context, points); context.fillStyle = gradient; context.fill();
   context.strokeStyle = rim; context.lineWidth = 2.4; context.stroke();
@@ -119,7 +141,7 @@ export function drawBlob(art, context, island, time, pointer, delta) {
   const bodyWidth = bounds.right - bounds.left;
   const bodyHeight = bounds.bottom - bounds.top;
   art.rainbow.forEach((color, index) => {
-    context.strokeStyle = paint(color, 0.17); context.lineWidth = 2.6;
+    context.strokeStyle = paint(color, 0.065); context.lineWidth = 4;
     context.beginPath(); context.moveTo(bounds.left - 3, bounds.top + bodyHeight * (0.22 + index * 0.10));
     context.bezierCurveTo(bounds.left + bodyWidth * 0.25, bounds.top + bodyHeight * (index * 0.08 - 0.08), bounds.left + bodyWidth * 0.68, bounds.bottom - bodyHeight * 0.15, bounds.right + 2, bounds.top + bodyHeight * index * 0.11);
     context.stroke();
@@ -142,7 +164,7 @@ export function drawBlob(art, context, island, time, pointer, delta) {
     const pupil = art.pupils[index];
     const lookAt = fingers.length > 1 ? fingers[index % fingers.length].target : pointer;
     const lookX = lookAt ? clamp((lookAt.x - center.x) / 110, -2.5, 2.5) : Math.sin(time * 0.0006) * 0.5;
-    const lookY = lookAt ? clamp((lookAt.y - center.y) / 120, -1.6, 1.8) : 0.6;
+    const lookY = lookAt ? clamp((lookAt.y - center.y - island.blob.depth) / 120, -1.6, 1.8) : 0.6;
     const targetX = clamp(lookX - core.velocity.x * 0.37, -3.9, 3.9);
     const targetY = clamp(lookY - core.velocity.y * 0.31 + 0.9, -3.3, 3.7);
     const tick = Math.min(2, delta / 16.667);
@@ -162,8 +184,10 @@ export function drawBlob(art, context, island, time, pointer, delta) {
   }
   const excited = Math.hypot(core.velocity.x, core.velocity.y) > 5 || [...island.drags.values()].some(drag => drag.kind === 'blob');
   context.strokeStyle = paint(ink, 0.87); context.fillStyle = paint(ink, 0.91); context.lineWidth = 1.8; context.lineCap = 'round';
-  context.beginPath(); context.moveTo(-6.5, 9); context.quadraticCurveTo(0, excited ? 23 : 18, 7, 9);
-  if (excited) {
+  context.beginPath(); context.moveTo(-6.5, 9); context.quadraticCurveTo(0, island.blob.ewwUntil > time ? 1 : excited ? 23 : 18, 7, 9);
+  if (island.blob.ewwUntil > time) context.stroke();
+  else if (island.blob.hiccupUntil > time || island.blob.tingleUntil > time) oval(context, 0, 11, 3.5, 4.5, paint(ink, 0.85));
+  else if (excited) {
     context.quadraticCurveTo(0, 12, -6.5, 9); context.fill();
     oval(context, 0.5, 15.5, 3.1, 1.4, paint(mix(pink, paper, 0.28)));
   } else context.stroke();

@@ -1,4 +1,11 @@
 import { drawBlob, drawProp, drawLogo } from './sprites.js';
+import { drawCreature, drawHabitats, drawObjectiveEffects } from './creature-art.js';
+import { drawLocalResident, drawReaction, drawComicEffects } from './character-details.js';
+import { drawTerrainDetails } from './terrain-art.js';
+import { drawMapHabitat } from './map-art.js';
+import { drawForagePatch } from './forage-art.js';
+import { drawCreatureBubbles } from './creature-bubbles.js';
+import { projectShadow } from './shadows.js';
 
 const TAU = Math.PI * 2;
 const clamp = (value, lower, upper) => Math.max(lower, Math.min(upper, value));
@@ -42,6 +49,12 @@ export class IslandScene {
     this.width = island.width;
     this.height = island.height;
     this.map = island.map;
+    const samples = new Set([0, island.width, island.layout.shore, island.layout.toe, island.layout.farToe, island.layout.farShore].filter(Number.isFinite));
+    for (const point of island.layout.seabed || []) samples.add(point.x);
+    for (let positionX = 0; positionX < island.width; positionX += 16) samples.add(positionX);
+    this.coastline = [...samples].sort((first, second) => first - second).map(positionX => [positionX, island.floorAt(positionX)]);
+    const waterEnd = island.layout.waterEnd || island.width;
+    this.waterBed = [[waterEnd, island.layout.water], ...this.coastline.filter(point => point[0] > island.layout.waterStart && point[0] < waterEnd).reverse(), [island.layout.waterStart, island.layout.water]];
     this.scale = canvas.height / island.height;
     Object.assign(this, { paint, mix, oval, clamp });
     this.random = randomSource();
@@ -60,11 +73,15 @@ export class IslandScene {
     Object.assign(this.colors, { ocean: mix(blue, green, 0.41), leaf: mix(green, ink, 0.26), sand: mix(paper, yellow, 0.28), wood: mix(yellow, ink, 0.52) });
     this.rainbow = [this.colors.red, yellow, green, mix(green, blue, 0.5), blue, mix(blue, pink, 0.62), pink];
     this.background = document.createElement('canvas');
-    this.background.width = canvas.width;
-    this.background.height = canvas.height;
+    this.cacheScale = Math.min(this.scale, 1.25);
+    this.background.width = Math.ceil(island.width * this.cacheScale);
+    this.background.height = Math.ceil(island.height * this.cacheScale);
     const background = this.background.getContext('2d', { alpha: false });
-    background.scale(this.scale, this.scale);
+    background.scale(this.cacheScale, this.cacheScale);
     this.drawBackground(background, island);
+    drawTerrainDetails(this, background, island);
+    drawMapHabitat(this, background, island);
+    drawHabitats(this, background, island);
     drawLogo(this);
     this.drawMapPreviews();
   }
@@ -79,8 +96,12 @@ export class IslandScene {
       context.fillStyle = paint(mix(ocean, paper, 0.42)); context.fillRect(0, 34, 64, 30);
       polygon(context, [[0, 44], [24, 42], [53, 64], [0, 64]], paint(sand));
       if (button.dataset.map === 'pools') {
-        polygon(context, [[23, 53], [29, 42], [42, 42], [48, 53]], paint(mix(ink, paper, 0.56)));
-        polygon(context, [[45, 43], [50, 35], [58, 35], [63, 43]], paint(mix(ink, paper, 0.66)));
+        context.fillStyle = paint(mix(ink, paper, 0.57)); context.beginPath(); context.moveTo(0, 39);
+        context.bezierCurveTo(13, 39, 17, 42, 25, 42); context.lineTo(33, 47);
+        context.quadraticCurveTo(37, 48, 42, 53); context.lineTo(53, 64);
+        context.lineTo(45, 64); context.quadraticCurveTo(32, 51, 23, 49); context.lineTo(0, 45); context.closePath(); context.fill();
+        context.strokeStyle = paint(paper, 0.54); context.lineWidth = 1;
+        context.beginPath(); context.moveTo(28, 44); context.quadraticCurveTo(37, 47, 40, 52); context.stroke();
       } else {
         context.strokeStyle = paint(wood); context.lineWidth = 4;
         context.beginPath(); context.moveTo(13, 49); context.quadraticCurveTo(14, 31, 21, 23); context.stroke();
@@ -162,7 +183,7 @@ export class IslandScene {
     const { ground, bottom, shore, toe, water, waterStart } = island.layout;
     const { paper, ink, blue, green, yellow, sand, leaf, ocean, pink } = this.colors;
     const random = randomSource();
-    const horizon = height * this.map.horizon;
+    const horizon = height * (this.map.horizon - (island.expedition ? 0.09 : 0));
     const sky = context.createLinearGradient(0, 0, 0, horizon + 70);
     sky.addColorStop(0, paint(this.dark ? mix(ink, blue, 0.26) : mix(mix(paper, blue, 0.23), mix(paper, pink, 0.28), this.map.warmth * 2.4)));
     sky.addColorStop(1, paint(this.dark ? mix(ink, blue, 0.38) : mix(paper, yellow, 0.035 + this.map.warmth * 0.68)));
@@ -194,26 +215,33 @@ export class IslandScene {
     context.lineTo(shore, ground + 100); context.lineTo(0, ground + 100); context.fill();
     for (let index = 0; index < 14; index += 1) this.leaf(context, random() * shore * 0.56, ground - 34, 55 + random() * 70, 15 + random() * 9, -2.8 + random() * 2.5, paint(mix(leaf, green, random() * 0.5)));
     const palmScale = clamp(width / 1300, 0.69, 1);
-    this.palm(context, width * 0.027, ground - 30, 248, -18, palmScale * 0.77);
+    this.palm(context, width * 0.027, ground - 30, island.expedition ? 205 : 248, -18, palmScale * 0.77);
     const beach = context.createLinearGradient(0, ground, 0, height);
-    beach.addColorStop(0, paint(mix(sand, paper, 0.34))); beach.addColorStop(0.65, paint(sand)); beach.addColorStop(1, paint(mix(sand, yellow, 0.12)));
-    polygon(context, [[0, ground], [shore, ground], [toe, bottom], [width, bottom], [width, height], [0, height]], beach);
-    context.strokeStyle = paint(paper, 0.62); context.lineWidth = 4; context.lineJoin = 'round';
-    context.beginPath(); context.moveTo(0, ground + 1); context.lineTo(shore, ground + 1); context.lineTo(toe, bottom + 1); context.lineTo(width, bottom + 1); context.stroke();
+    beach.addColorStop(0, paint(mix(sand, paper, 0.23))); beach.addColorStop(0.65, paint(sand)); beach.addColorStop(1, paint(mix(sand, yellow, 0.12)));
+    const farToe = island.layout.farToe || width;
+    const farShore = island.layout.farShore || width;
+    const farGround = island.layout.farGround || bottom;
+    polygon(context, [...this.coastline, [width, height], [0, height]], beach);
+    context.strokeStyle = paint(mix(sand, paper, 0.25), 0.25); context.lineWidth = 5; context.lineJoin = 'round';
+    for (const [start, end] of [[shore, toe], [farToe, farShore]]) {
+      context.beginPath(); context.moveTo(start, island.floorAt(start) + 2);
+      for (const [positionX, positionY] of this.coastline.filter(point => point[0] > start && point[0] <= end)) context.lineTo(positionX, positionY + 2);
+      context.stroke();
+    }
     for (let index = 0; index < 760; index += 1) {
       const positionX = random() * width;
-      const floor = positionX < shore ? ground : positionX < toe ? ground + (positionX - shore) / (toe - shore) * (bottom - ground) : bottom;
+      const floor = island.floorAt(positionX);
       oval(context, positionX, floor + 8 + random() * (height - floor), 0.6 + random() * 1.4, 0.4 + random() * 0.6, paint(random() > 0.45 ? paper : mix(yellow, ink, 0.30), 0.18 + random() * 0.2));
     }
     for (let index = 0; index < 15; index += 1) {
       const positionX = waterStart + random() * (width - waterStart);
-      const floor = positionX < toe ? ground + (positionX - shore) / (toe - shore) * (bottom - ground) : bottom;
+      const floor = island.floorAt(positionX);
       oval(context, positionX, floor + 3, 4 + random() * 8, 2 + random() * 3, paint(mix(sand, ink, 0.34), 0.43));
       if (index % 3 === 0) for (let blade = 0; blade < 5; blade += 1) this.leaf(context, positionX, floor, 23 + random() * 35, 4, -2.1 + blade * 0.23, paint(mix(green, ocean, 0.26), 0.54));
     }
     const shallow = context.createLinearGradient(0, water, 0, bottom);
     shallow.addColorStop(0, paint(mix(ocean, paper, 0.39), 0.18)); shallow.addColorStop(1, paint(mix(ocean, blue, 0.25), 0.30));
-    polygon(context, [[waterStart, water], [width, water], [width, bottom], [toe, bottom]], shallow);
+    polygon(context, [[waterStart, water], ...this.waterBed], shallow);
     for (const rock of island.rocks) {
       polygon(context, rock.vertices.map(vertex => [vertex.x, vertex.y]), paint(mix(ink, paper, 0.57)));
       polygon(context, rock.vertices.slice(0, 3).map(vertex => [vertex.x, vertex.y]), paint(mix(ink, paper, 0.68)));
@@ -254,22 +282,40 @@ export class IslandScene {
   drawWater(context, island, time) {
     const { paper, ocean, blue } = this.colors;
     const { waterStart, water, bottom } = island.layout;
+    const waterEnd = island.layout.waterEnd || this.width;
+    context.save();
+    context.beginPath(); context.moveTo(waterStart, water);
+    for (const point of this.waterBed) context.lineTo(...point);
+    context.closePath(); context.clip();
+    for (let index = 0; index < 28; index += 1) {
+      const positionX = waterStart + index / 27 * (waterEnd - waterStart) + Math.sin(time * 0.0006 + index) * 15;
+      const positionY = water + 42 + index % 6 * 44;
+      context.strokeStyle = paint(paper, 0.07 + (Math.sin(time * 0.001 + index) + 1) * 0.025); context.lineWidth = 1.2;
+      context.beginPath(); context.ellipse(positionX, positionY, 22 + index % 3 * 10, 6, Math.sin(index) * 0.2, 0.2, Math.PI * 1.6); context.stroke();
+      if (index % 5 === 0) {
+        const bubbleY = bottom - (time * 0.015 + index * 19) % Math.max(1, bottom - water - 12);
+        context.strokeStyle = paint(paper, 0.27); context.lineWidth = 0.8; context.beginPath(); context.arc(positionX + 10, bubbleY, 2.2, 0, TAU); context.stroke();
+      }
+    }
+    context.restore();
     const waterPath = () => {
       context.beginPath();
       island.waves.forEach((wave, index) => {
-        const positionX = waterStart + index / (island.waves.length - 1) * (this.width - waterStart);
+        const positionX = waterStart + index / (island.waves.length - 1) * (waterEnd - waterStart);
         if (index === 0) context.moveTo(positionX, water + wave.offset);
         else context.lineTo(positionX, water + wave.offset);
       });
     };
-    waterPath(); context.lineTo(this.width, bottom + 12); context.lineTo(island.layout.toe, bottom + 12); context.closePath();
+    waterPath();
+    for (const point of this.waterBed) context.lineTo(...point);
+    context.closePath();
     const wash = context.createLinearGradient(0, water, 0, bottom);
     wash.addColorStop(0, paint(mix(ocean, paper, 0.35), 0.11)); wash.addColorStop(1, paint(mix(blue, ocean, 0.6), 0.19));
     context.fillStyle = wash; context.fill();
     waterPath(); context.strokeStyle = paint(paper, 0.87); context.lineWidth = 2.5; context.stroke();
     waterPath(); context.strokeStyle = paint(ocean, 0.40); context.lineWidth = 0.7; context.stroke();
     for (let index = 0; index < 7; index += 1) {
-      const positionX = waterStart + ((index * 139 + time * 0.009) % (this.width - waterStart));
+      const positionX = waterStart + ((index * 139 + time * 0.009) % (waterEnd - waterStart));
       context.strokeStyle = paint(paper, 0.32); context.lineWidth = 1.2;
       context.beginPath(); context.ellipse(positionX, water + 12 + index % 3 * 30, 14 + index % 3 * 8, 2.5, 0, Math.PI * 1.15, TAU * 0.95); context.stroke();
     }
@@ -287,14 +333,17 @@ export class IslandScene {
     }
   }
 
-  draw(island, time, pointer, reducedMotion) {
+  draw(island, time, pointer, reducedMotion, camera = { x: 0, viewWidth: island.width }) {
     const context = this.context;
     const delta = clamp(time - this.lastTime, 0, 40); this.lastTime = time;
-    context.setTransform(1, 0, 0, 1, 0, 0); context.drawImage(this.background, 0, 0);
-    context.setTransform(this.scale, 0, 0, this.scale, 0, 0);
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.fillStyle = paint(this.colors.paper); context.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    const visibleWidth = Math.min(camera.viewWidth, island.width - camera.x);
+    context.drawImage(this.background, camera.x * this.cacheScale, 0, visibleWidth * this.cacheScale, this.height * this.cacheScale, 0, 0, visibleWidth * this.scale, this.canvas.height);
+    context.setTransform(this.scale, 0, 0, this.scale, -camera.x * this.scale, 0);
     const { paper, ink, blue, pink } = this.colors;
     if (!reducedMotion) {
-      for (let index = 0; index < 3; index += 1) {
+      for (let index = 0; !island.wildlife && index < 3; index += 1) {
         const positionX = this.width * (0.65 + index * 0.12) + Math.sin(time * 0.0004 + index * 2) * 22;
         const positionY = island.layout.water + 108 + index % 2 * 38;
         const direction = Math.cos(time * 0.0004 + index * 2) < 0 ? -1 : 1;
@@ -302,20 +351,48 @@ export class IslandScene {
         polygon(context, [[positionX - direction * 8, positionY], [positionX - direction * 15, positionY - 4], [positionX - direction * 15, positionY + 4]], paint(blue, 0.24));
       }
       const boatX = this.width * 0.9 + Math.sin(time * 0.000045) * this.width * 0.035;
-      const boatY = this.height * this.map.horizon + 68 + Math.sin(time * 0.0008) * 1.3;
+      const boatY = this.height * (this.map.horizon - (island.expedition ? 0.09 : 0)) + 68 + Math.sin(time * 0.0008) * 1.3;
       polygon(context, [[boatX - 14, boatY], [boatX + 15, boatY], [boatX + 9, boatY + 5], [boatX - 8, boatY + 5]], paint(mix(ink, paper, 0.52)));
       polygon(context, [[boatX - 1, boatY - 35], [boatX - 1, boatY - 3], [boatX - 19, boatY - 3]], paint(paper, 0.83));
       polygon(context, [[boatX + 1, boatY - 29], [boatX + 1, boatY - 3], [boatX + 14, boatY - 3]], paint(mix(paper, this.colors.yellow, 0.09), 0.8));
     }
     const center = island.blobPosition();
-    const { ground, shore, toe, bottom } = island.layout;
-    const floor = center.x < shore ? ground : center.x < toe ? ground + (center.x - shore) / (toe - shore) * (bottom - ground) : bottom;
-    const elevation = Math.max(0, floor - center.y - island.blob.radius);
-    oval(context, center.x, floor + 3, clamp(31 - elevation * 0.04, 10, 31), 4, paint(ink, 0.12 * Math.max(0.15, 1 - elevation / 420)));
+    const shadow = body => { const shade = projectShadow(island, body); if (shade.alpha > 0.005) oval(context, shade.x, shade.y, shade.radiusX, shade.radiusY, paint(ink, shade.alpha)); };
     this.drawTree(context, island, time);
-    for (const prop of island.props) drawProp(this, context, prop);
-    drawBlob(this, context, island, time, pointer, delta);
+    const drawToy = prop => {
+      const position = prop.body.position;
+      shadow({ ...position, width: prop.width || prop.radius * 2, height: prop.height || prop.radius * 2, depth: prop.depth || 0, floating: prop.submerged > 0.05 && prop.density < 1, aquatic: prop.submerged > 0.5 });
+      if (prop.ropes) {
+        context.strokeStyle = paint(this.colors.wood, 0.82); context.lineWidth = 2;
+        for (const rope of prop.ropes) {
+          const cosine = Math.cos(prop.body.angle), sine = Math.sin(prop.body.angle);
+          context.beginPath(); context.moveTo(rope.pointA.x, rope.pointA.y);
+          context.lineTo(position.x + rope.pointB.x * cosine - rope.pointB.y * sine, position.y + rope.pointB.x * sine + rope.pointB.y * cosine); context.stroke();
+        }
+      }
+      drawProp(this, context, prop);
+    };
+    const residents = [...(island.wildlife?.residents || [])].sort((first, second) => first.depth - second.depth);
+    const drawResident = resident => {
+      if (resident.body.position.x < camera.x - 90 || resident.body.position.x > camera.x + camera.viewWidth + 90) return;
+      shadow({ ...resident.body.position, width: resident.width, height: resident.height, depth: resident.depth, aquatic: resident.immersion > 0.5 });
+      if (!drawLocalResident(this, context, resident, time)) drawCreature(this, context, resident, time);
+      drawReaction(this, context, resident, time);
+    };
+    const drawBlobby = () => {
+      shadow({ ...center, width: 80, height: 80, depth: island.blob.depth, floating: center.x > island.layout.waterStart && center.x < island.layout.waterEnd && Math.abs(center.y - island.layout.water) < 50 });
+      context.save(); context.translate(0, island.blob.depth); drawBlob(this, context, island, time, pointer, delta); context.restore();
+    };
+    const sprites = [...(island.wildlife?.foraging.patches || []).filter(patch => patch.x > camera.x - 50 && patch.x < camera.x + camera.viewWidth + 50).map(patch => ({ depth: patch.depth, priority: -1, draw: () => drawForagePatch(this, context, patch, time) })),
+      ...island.props.map(prop => ({ depth: prop.depth || 0, priority: 0, draw: () => drawToy(prop) })),
+      ...residents.map(resident => ({ depth: resident.depth, priority: 2, draw: () => drawResident(resident) })),
+      { depth: island.blob.depth, priority: island.blob.depth > 18 ? 1 : 3, draw: drawBlobby }].sort((first, second) => first.depth - second.depth || first.priority - second.priority);
+    for (const sprite of sprites.filter(item => item.depth <= 18)) sprite.draw();
     this.drawWater(context, island, time);
+    for (const sprite of sprites.filter(item => item.depth > 18)) sprite.draw();
+    drawObjectiveEffects(this, context, island, time);
+    drawComicEffects(this, context, island, time);
+    if (island.wildlife) drawCreatureBubbles(this, context, island, time, camera);
     for (const drag of island.drags.values()) {
       context.strokeStyle = paint(paper, 0.55); context.lineWidth = 1.1;
       context.beginPath(); context.arc(drag.target.x, drag.target.y, 17, 0, TAU); context.stroke();
