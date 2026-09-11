@@ -1,4 +1,4 @@
-import { applyCreaturePose, drawingSize, eyeGaze, feedingPose, frogJumpPose } from './creature-pose.js';
+import { applyCreaturePose, drawingSize, eyeGaze, feedingPose, frogJumpPose, frogSwimPose } from './creature-pose.js';
 import { comicPose } from './antics.js';
 
 const TAU = Math.PI * 2;
@@ -33,11 +33,12 @@ export function drawLocalResident(art, context, resident, time) {
     const skin = resident.id === 'sprig' ? mix(green, yellow, 0.36) : mix(green, colors.blue, 0.22);
     const belly = mix(paper, yellow, 0.22);
     const jump = frogJumpPose(resident, time);
-    const kick = jump.extension * 5 - jump.tuck * 3;
+    const swim = frogSwimPose(resident, time);
+    const kick = jump.extension * 5 - jump.tuck * 3 + swim.kick * 8;
     const puff = comic === 'throat-puff' ? 1 + Math.sin(time * 0.008) ** 2 * 0.4 : 1;
-    oval(context, -11, 7, 8, 5.5, paint(mix(skin, wood, 0.13)), -0.35);
+    oval(context, -11 - swim.kick * 3, 7, 8, 5.5, paint(mix(skin, wood, 0.13)), -0.35 - swim.kick * 0.2);
     oval(context, -14 - kick, 11 + kick * 0.35, 6, 2.5, paint(skin), -0.1);
-    oval(context, 8 + kick, 11 + kick * 0.3, 5.5, 2.5, paint(skin), 0.1);
+    oval(context, 8 + kick - swim.kick * 14, 11 + kick * 0.3, 5.5, 2.5, paint(skin), 0.1);
     oval(context, -1, 3, 14, 10, paint(skin));
     oval(context, 3, 6, 9, 5.5 * puff, paint(belly));
     oval(context, 6, -4, 13, 8.5, paint(skin));
@@ -51,7 +52,7 @@ export function drawLocalResident(art, context, resident, time) {
     for (const [spotX, spotY] of [[-8, -1], [-3, -3], [-10, 3]]) oval(context, spotX, spotY, 1.4, 1, paint(mix(skin, wood, 0.38), 0.6));
     context.strokeStyle = paint(mix(skin, wood, 0.18)); context.lineWidth = 2.2; context.lineCap = 'round';
     for (const offset of [-1, 10]) {
-      context.beginPath(); context.moveTo(offset, 3); context.lineTo(offset - jump.tuck * 2, 10 - jump.tuck * 4); context.stroke();
+      context.beginPath(); context.moveTo(offset, 3); context.lineTo(offset - jump.tuck * 2 - swim.reach * 6, 10 - jump.tuck * 4 + swim.kick * 2); context.stroke();
     }
     for (const offset of [-4, 16]) oval(context, offset, 0.5, 2.8, 1.6, paint(pink, 0.32));
     if (!resident.frown && !feeding.eating && !feeding.smile) {

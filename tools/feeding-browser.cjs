@@ -45,25 +45,38 @@ async function inputFor(page, config) {
   };
 }
 
-async function carryResident(page, input, id, destination) {
+async function carryResident(page, input, id, destination, settle = false) {
   let resident = (await readState(page)).creatures.find(item => item.id === id);
   await seek(page, resident.x);
   let offset;
-  for (const position of [{ x: 0, y: 0 }, { x: 0.33, y: -0.2 }, { x: -0.33, y: 0.2 }]) {
-    resident = (await readState(page)).creatures.find(item => item.id === id);
-    const point = { x: resident.x + resident.width * position.x, y: resident.y + resident.height * position.y };
-    await input.send('down', point);
-    if ((await readState(page)).creatures.find(item => item.id === id).held) { offset = { x: point.x - resident.x, y: point.y - resident.y }; break; }
-    await input.send('up', point);
+  for (let layer = 0; layer < 3 && !offset; layer += 1) {
+    for (const position of [{ x: 0, y: 0 }, { x: 0.33, y: -0.2 }, { x: -0.33, y: 0.2 }]) {
+      resident = (await readState(page)).creatures.find(item => item.id === id);
+      const point = { x: resident.x + resident.width * position.x, y: resident.y + resident.height * position.y };
+      await input.send('down', point);
+      const state = await readState(page);
+      if (state.creatures.find(item => item.id === id).held) { offset = { x: point.x - resident.x, y: point.y - resident.y }; break; }
+      const covering = state.creatures.find(item => item.held);
+      if (covering) {
+        const clear = { x: covering.x + (covering.x < resident.x ? -145 : 145), y: covering.y - 55 };
+        await input.send('move', clear);
+        await page.clock.runFor(700);
+        await input.send('up', clear);
+        break;
+      }
+      await input.send('up', point);
+    }
   }
   assert.ok(offset, `${id} must be acquired through the actual input handler`);
   for (let attempt = 0; attempt < 140; attempt += 1) {
     const target = { x: destination.x + offset.x, y: destination.y + offset.y };
     await input.send('move', target); await page.clock.runFor(100);
     resident = (await readState(page)).creatures.find(item => item.id === id);
-    if (Math.hypot(resident.x - destination.x, resident.y - destination.y) < 18) break;
+    if (Math.hypot(resident.x - destination.x, resident.y - destination.y) < 18
+      && (!settle || Math.hypot(resident.velocity.x, resident.velocity.y) < 0.45)) break;
   }
   assert.ok(Math.hypot(resident.x - destination.x, resident.y - destination.y) < 22, `${id} must reach the clear feeding area by real dragging`);
+  assert.ok(!settle || Math.hypot(resident.velocity.x, resident.velocity.y) < 0.45, 'Deliberate pad placement must settle before release');
   await input.send('up', { x: destination.x + offset.x, y: destination.y + offset.y });
   await page.clock.runFor(650);
 }
@@ -339,6 +352,211 @@ async function frogPlayCase(page, config, output) {
   return report;
 }
 
+async function frogSwimmingCase(page, input, config, output, map) {
+  await page.locator(`[data-map="${map}"]`).click({ force: true });
+  await page.locator('#reset').click({ force: true });
+  await page.clock.runFor(1300);
+  const initial = await readState(page);
+  const report = { kind: 'frog-swimming', map, passed: false, swimmers: [] };
+  try {
+    for (const [index, id] of ['puddle', 'sprig'].entries()) {
+      await carryResident(page, input, id, { x: initial.coast.farToe - 195 - index * 180, y: initial.water + 60 });
+      const released = await readState(page);
+      assert.equal(released.drags, 0, 'The frog must be released before the swimming observation');
+      assert.equal(released.creatures.find(resident => resident.id === id).held, false);
+      const samples = [];
+      const swimmer = { id, released, samples };
+      report.swimmers.push(swimmer);
+      for (let sample = 0; sample < 64; sample += 1) {
+        await page.clock.runFor(100);
+        const state = await readState(page);
+        const frog = state.creatures.find(resident => resident.id === id);
+        assert.equal(state.finite, true);
+        samples.push({ time: state.time, frog });
+        assert.equal(frog.recovery, '', `${map}/${id} must not be forced back to shore`);
+        assert.equal(frog.rescue, false);
+      }
+      const surface = samples.filter(sample => sample.frog.swimPose.swimming && Math.abs(sample.frog.physicalY - initial.water) < sample.frog.height * 0.6);
+      assert.ok(surface.length >= 30, `${map}/${id} must spend sustained time swimming at the surface`);
+      swimmer.surfaceTravel = Math.max(...surface.map(sample => sample.frog.x)) - Math.min(...surface.map(sample => sample.frog.x));
+      assert.ok(swimmer.surfaceTravel > 65, `${map}/${id} must paddle across the water after release`);
+      assert.ok(surface.some(sample => !sample.frog.frown), 'A frog must be comfortable swimming');
+      assert.ok(surface.every(sample => !sample.frog.jumpPose.airborne && sample.frog.jumpPose.rotation === 0), 'Swimming must not show an airborne somersault');
+      const kicks = surface.map(sample => sample.frog.swimPose.kick);
+      assert.ok(Math.max(...kicks) - Math.min(...kicks) > 0.85, 'The rendered swimming legs must cycle through full strokes');
+      await seek(page, surface.at(-1).frog.x);
+      await page.screenshot({ path: path.join(output, `frog-swimming-${config.name}-${map}-${id}.png`) });
+    }
+    await seek(page, (await readState(page)).environment.lilyPads[6].x);
+    report.lilyPads = await page.evaluate(() => {
+      const state = window.__blobIsland.snapshot();
+      const canvas = document.getElementById('world');
+      canvas.toDataURL();
+      const context = canvas.getContext('2d');
+      const scale = canvas.height / state.height;
+      return state.environment.lilyPads.filter(pad => pad.x - pad.radius > state.camera.x && pad.x + pad.radius < state.camera.x + state.camera.width).map(pad => {
+        const left = Math.floor((pad.x - pad.radius * 0.8 - state.camera.x) * scale);
+        const top = Math.floor((pad.y - pad.radius * 0.12) * scale);
+        const pixels = context.getImageData(left, top, Math.max(1, Math.floor(pad.radius * 0.6 * scale)), Math.max(1, Math.floor(pad.radius * 0.24 * scale))).data;
+        let greenPixels = 0;
+        for (let offset = 0; offset < pixels.length; offset += 4) {
+          if (pixels[offset + 1] > pixels[offset] * 1.1 && pixels[offset + 1] > pixels[offset + 2] * 1.1) greenPixels += 1;
+        }
+        return { ...pad, greenPixels };
+      });
+    });
+    assert.ok(report.lilyPads.length >= 2, 'A lily-pad cluster must be visible in the ocean');
+    assert.ok(report.lilyPads.every(pad => pad.greenPixels > 12), 'Lily pads must have real rendered leaf pixels at their surface positions');
+    await page.screenshot({ path: path.join(output, `frog-swimming-${config.name}-${map}-lily-pads.png`) });
+    await page.keyboard.press('Space');
+    const frozen = await readState(page);
+    await page.clock.runFor(800);
+    const paused = await readState(page);
+    assert.equal(paused.time, frozen.time, 'Pause must freeze swimming time');
+    assert.deepEqual(paused.environment.lilyPads, frozen.environment.lilyPads, 'Pause must freeze the floating lily pads');
+    assert.deepEqual(paused.creatures.filter(resident => resident.species === 'frog'), frozen.creatures.filter(resident => resident.species === 'frog'));
+    await page.keyboard.press('Space');
+    await page.clock.runFor(200);
+    assert.ok((await readState(page)).time > paused.time, 'Swimming must resume after pause');
+    report.passed = true;
+  } finally {
+    fs.writeFileSync(path.join(output, `frog-swimming-${config.name}-${map}.json`), JSON.stringify(report, null, 2));
+  }
+  console.log(`PASS swimming ${config.name}-${map}: both frogs, real release, surface strokes, lily-pad pixels and pause`);
+  return report;
+}
+
+async function frogPadCase(page, input, config, output, map) {
+  await page.locator(`[data-map="${map}"]`).click({ force: true });
+  await page.locator('#reset').click({ force: true });
+  await page.clock.runFor(1300);
+  const initial = await readState(page);
+  const id = config.nativeTouch ? map === 'pools' ? 'puddle' : 'sprig' : map === 'pools' ? 'sprig' : 'puddle';
+  const original = initial.creatures.find(resident => resident.id === id);
+  const pad = initial.environment.lilyPads[6];
+  const report = { kind: 'frog-lily-pads', map, id, passed: false, samples: [], jumps: [] };
+  try {
+    await carryResident(page, input, id, { x: pad.x, y: pad.y - original.height * 0.41 - 40 }, true);
+    await seek(page, pad.x);
+    let state = await readState(page);
+    let frog = state.creatures.find(resident => resident.id === id);
+    assert.equal(frog.lilyPadId, pad.id, 'A frog dropped onto a lily pad must be physically supported');
+    assert.equal(frog.grounded, true);
+    await input.send('down', frog);
+    assert.equal((await readState(page)).creatures.find(resident => resident.id === id).held, true, 'A seated frog must remain pickable');
+    await input.send('move', { x: pad.x, y: frog.y - 45 });
+    await page.clock.runFor(450);
+    const held = (await readState(page)).creatures.find(resident => resident.id === id);
+    assert.ok(held.y < frog.y - 20, 'The held frog must lift off its pad');
+    assert.equal(held.padHop, null);
+    await input.send('up', held);
+    await page.clock.runFor(900);
+    state = await readState(page);
+    frog = state.creatures.find(resident => resident.id === id);
+    assert.equal(frog.lilyPadId, pad.id);
+    assert.equal(state.drags, 0);
+    await page.locator('#pause').click({ force: true });
+    const frozen = await readState(page);
+    assert.equal(frozen.paused, true);
+    await page.clock.runFor(800);
+    assert.equal((await readState(page)).time, frozen.time, 'A seated frog and its pad must pause together');
+    const otherMap = map === 'lagoon' ? 'pools' : 'lagoon';
+    await page.locator(`[data-map="${otherMap}"]`).click({ force: true });
+    await page.clock.runFor(300);
+    await page.locator(`[data-map="${map}"]`).click({ force: true });
+    const retained = await readState(page);
+    assert.equal(retained.time, frozen.time);
+    assert.deepEqual(retained.creatures.find(resident => resident.id === id), frozen.creatures.find(resident => resident.id === id), 'Map switching must retain the frog on its original pad');
+    assert.deepEqual(retained.environment.lilyPads, frozen.environment.lilyPads);
+    await seek(page, frog.x);
+    report.resting = retained.creatures.find(resident => resident.id === id);
+    report.visibleBellyPixels = await page.evaluate(id => {
+      const state = window.__blobIsland.snapshot();
+      const frog = state.creatures.find(resident => resident.id === id);
+      const canvas = document.getElementById('world');
+      canvas.toDataURL();
+      const scale = canvas.height / state.height;
+      const pixels = canvas.getContext('2d').getImageData(Math.floor((frog.x - frog.width * 0.35 - state.camera.x) * scale),
+        Math.floor((frog.y + frog.height * 0.08) * scale), Math.max(1, Math.floor(frog.width * 0.7 * scale)), Math.max(1, Math.floor(frog.height * 0.22 * scale))).data;
+      let visible = 0;
+      for (let offset = 0; offset < pixels.length; offset += 4) {
+        if (pixels[offset] > 160 && pixels[offset + 1] > 145 && pixels[offset + 2] > 100
+          && pixels[offset] > pixels[offset + 1] * 0.98 && pixels[offset] > pixels[offset + 2] * 1.03) visible += 1;
+      }
+      return visible;
+    }, id);
+    assert.ok(report.visibleBellyPixels > 8, 'The seated frog must render on top of the leaf, not disappear behind it');
+    await page.screenshot({ path: path.join(output, `lily-pads-${config.name}-${map}-resting.png`) });
+    await page.locator('#pause').click({ force: true });
+    assert.equal((await readState(page)).paused, false);
+    await page.locator('#reset').click({ force: true });
+    await page.clock.runFor(1300);
+    const fresh = await readState(page);
+    const waterStart = fresh.environment.lilyPads[7];
+    await carryResident(page, input, id, { x: waterStart.x + 65, y: waterStart.y + original.height * 1.5 }, true);
+    report.waterStart = await readState(page);
+    assert.equal(report.waterStart.drags, 0, 'The natural pad cycle starts with a released swimming frog');
+    assert.equal(report.waterStart.creatures.find(resident => resident.id === id).lilyPadId, null);
+    const deadline = report.waterStart.time + 60000;
+    let activeJump = null;
+    let restStart = null;
+    let restingPad = null;
+    let longestRest = 0;
+    state = await readState(page);
+    for (let sample = 0; sample < 600 && state.time < deadline; sample += 1) {
+      const previousTime = state.time;
+      await page.clock.runFor(100);
+      state = await readState(page);
+      assert.ok(state.time > previousTime, 'The natural pad-cycle check must observe an advancing simulation');
+      frog = state.creatures.find(resident => resident.id === id);
+      report.samples.push({ time: state.time, frog });
+      assert.equal(state.finite, true);
+      assert.equal(frog.recovery, '', 'Pad activity must not trigger habitat rescue');
+      if (activeJump && frog.padHop?.started !== activeJump.started) {
+        activeJump.landed = frog.lilyPadId;
+        activeJump.water = !frog.lilyPadId && frog.immersion > 0.15 && frog.swimPose.swimming;
+        activeJump = null;
+      }
+      if (frog.padHop?.started != null) {
+        if (!activeJump) {
+          activeJump = { ...frog.padHop, airborne: false, extension: 0, height: 0 };
+          report.jumps.push(activeJump);
+        }
+        activeJump.airborne ||= frog.jumpPose.airborne;
+        activeJump.extension = Math.max(activeJump.extension, frog.jumpPose.extension);
+        activeJump.height = Math.max(activeJump.height, initial.water - frog.physicalY - frog.height * 0.41);
+        if (!activeJump.screenshot && frog.jumpPose.airborne && activeJump.height > 15) {
+          await seek(page, frog.x);
+          activeJump.screenshot = `lily-pads-${config.name}-${map}-hop-${report.jumps.length}.png`;
+          await page.screenshot({ path: path.join(output, activeJump.screenshot) });
+        }
+      }
+      if (frog.lilyPadId && frog.state === 'resting') {
+        if (restingPad !== frog.lilyPadId) restStart = state.time;
+        restingPad = frog.lilyPadId;
+        longestRest = Math.max(longestRest, state.time - restStart);
+        assert.equal(frog.grounded, true);
+        assert.equal(frog.swimPose.swimming, false, 'A sitting frog must stop paddling');
+      } else { restingPad = null; restStart = null; }
+      const physical = jump => jump.airborne && jump.extension > 0.6 && jump.height > 12;
+      report.between = report.jumps.some(jump => physical(jump) && jump.from && jump.to && jump.from !== jump.to && jump.landed === jump.to);
+      report.off = report.jumps.some(jump => physical(jump) && jump.from && !jump.to && jump.water);
+      report.onto = report.jumps.some(jump => physical(jump) && !jump.from && jump.to && jump.landed === jump.to);
+      if (report.between && report.off && report.onto && longestRest >= 2000) break;
+    }
+    report.longestRest = longestRest;
+    assert.ok(longestRest >= 2000, 'Frogs must sit calmly on lily pads for at least two active seconds');
+    assert.ok(report.between, `${map}/${id} must naturally jump and land on a neighboring pad`);
+    assert.ok(report.off, `${map}/${id} must naturally jump back into the water`);
+    assert.ok(report.onto, `${map}/${id} must naturally jump out of the water onto a pad`);
+    report.passed = true;
+  } finally {
+    fs.writeFileSync(path.join(output, `lily-pads-${config.name}-${map}.json`), JSON.stringify(report, null, 2));
+  }
+  console.log(`PASS lily pads ${config.name}-${map}: support, regrab, visible rest, natural hops, pause and map retention`);
+  return report;
+}
+
 async function exerciseFeeding(page, config, output) {
   await page.clock.install({ time: new Date('2026-09-09T14:00:00Z') });
   await page.clock.pauseAt(new Date('2026-09-09T14:00:00.100Z'));
@@ -348,7 +566,8 @@ async function exerciseFeeding(page, config, output) {
   const thorough = config.name === 'desktop' || config.nativeTouch;
   const discoveries = process.env.BLOB_FEATURES === 'discoveries';
   const frogs = process.env.BLOB_FEATURES === 'frogs';
-  const requests = [...(discoveries || frogs ? [] : [{ map: 'lagoon', id: 'fin', food: 'algae' },
+  const swimming = process.env.BLOB_FEATURES === 'swimming';
+  const requests = swimming ? [] : [...(discoveries || frogs ? [] : [{ map: 'lagoon', id: 'fin', food: 'algae' },
     ...(thorough ? [{ map: 'lagoon', id: 'drift', food: 'bait-fish' }, { map: 'lagoon', id: 'skipper', food: 'bait-fish' },
       { map: 'lagoon', id: 'mango', food: 'insects' }, { map: 'lagoon', id: 'fern', food: 'insects' },
       { map: 'pools', id: 'aster', food: 'algae' }, { map: 'pools', id: 'pearl', food: 'shell-bed' }] : []),
@@ -360,11 +579,17 @@ async function exerciseFeeding(page, config, output) {
     ...(frogs ? [] : ['lagoon', 'pools', 'sunset'].map(map => ({ map, id: 'momo', food: 'banana' }))),
     ...(discoveries ? [] : ['lagoon', 'pools', 'sunset'].flatMap(map => ['puddle', 'sprig'].map(id => ({ map, id, food: 'insects', released: id === 'sprig' }))))]
     .filter(request => !process.env.BLOB_FEEDING_CASES || process.env.BLOB_FEEDING_CASES.split(',').includes(`${request.map}:${request.id}`));
-  assert.ok(requests.length, 'The feeding selector must execute real meal cases');
+  assert.ok(swimming || requests.length, 'The feeding selector must execute real meal cases');
   const reports = [];
   try {
     for (const request of requests) reports.push(await mealCase(page, input, config, output, request));
     if (frogs || (process.env.BLOB_FEATURES || 'all') === 'all') reports.push(await frogPlayCase(page, config, output));
+    if (swimming || frogs || (process.env.BLOB_FEATURES || 'all') === 'all') {
+      for (const map of ['lagoon', 'pools', 'sunset']) {
+        reports.push(await frogSwimmingCase(page, input, config, output, map));
+        reports.push(await frogPadCase(page, input, config, output, map));
+      }
+    }
     if (discoveries || (process.env.BLOB_FEATURES || 'all') === 'all') {
       for (const map of ['lagoon', 'pools', 'sunset']) reports.push(await treasureCase(page, input, config, output, map));
     }

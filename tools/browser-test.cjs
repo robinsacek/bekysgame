@@ -552,14 +552,14 @@ async function run() {
           let visualResult;
           let feedingResult;
           if (features === 'visual') visualResult = await exerciseVisual(page, config);
-          else if (['feeding', 'discoveries', 'frogs'].includes(features)) feedingResult = await exerciseFeeding(page, config, output);
+          else if (['feeding', 'discoveries', 'frogs', 'swimming'].includes(features)) feedingResult = await exerciseFeeding(page, config, output);
           else if (process.env.BLOB_FEATURES !== 'coast') {
             await exercise(page, context, config);
             if (process.env.BLOB_FEATURES !== 'audio') await exerciseIslands(page, config);
             audioResult = await exerciseAudio(page, config, output);
           }
           if (features === 'all') feedingResult = await exerciseFeeding(page, config, output);
-          if (!['audio', 'visual', 'feeding', 'discoveries', 'frogs'].includes(features)) await exerciseCoast(page, config, output);
+          if (!['audio', 'visual', 'feeding', 'discoveries', 'frogs', 'swimming'].includes(features)) await exerciseCoast(page, config, output);
           const animation = await page.evaluate(async () => {
             const canvas = document.getElementById('world');
             const context = canvas.getContext('2d');

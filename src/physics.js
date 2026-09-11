@@ -72,6 +72,7 @@ class IslandPhysics {
     }
     this.treasure = new TreasureChest(this);
     this.environment = new IslandEnvironment(this);
+    this.wildlife?.updateLilyPads();
     this.initialPropCount = this.props.length;
     Events.on(this.engine, 'collisionStart', event => {
       for (const pair of event.pairs) {

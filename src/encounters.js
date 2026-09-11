@@ -8,7 +8,7 @@ const AGENDAS = {
   starfish: 'graze on reef rocks', crab: 'find and inspect shells', tortoise: 'browse, rest, and visit food',
   bird: 'perch, cruise, watch fish, and forage', lizard: 'bask and investigate insects', rabbit: 'graze, hop, and play',
   monkey: 'explore the banana grove, munch bananas, and greet friends',
-  frog: 'hop along the beach, catch flies, and greet friends',
+  frog: 'hop along the beach, swim in the ocean, catch flies, and greet friends',
 };
 
 function encounterResponse(first, second) {
@@ -44,6 +44,7 @@ class LivingInteractions {
   mood(resident) {
     const point = resident.body.position;
     const unsuitable = AQUATIC.has(resident.species) ? resident.immersion < 0.20 : resident.species === 'bird' ? resident.immersion > 0.12
+      : resident.species === 'frog' ? resident.held && resident.immersion < 0.05 && point.y < this.island.floorAt(point.x) - 120
       : resident.immersion > 0.18 || resident.held && point.y < this.island.floorAt(point.x) - 120;
     resident.frown = unsuitable || resident.ewwUntil > this.island.time || resident.tingleUntil > this.island.time;
   }
@@ -66,7 +67,7 @@ class LivingInteractions {
   }
 
   busy(resident) {
-    return resident.held || this.wildlife.held(resident.body) || resident.recovery || this.owns(resident)
+    return resident.held || this.wildlife.held(resident.body) || resident.recovery || resident.padHop || resident.lilyPadId || this.owns(resident)
       || ['foraging', 'snacking', 'visiting', 'visiting-flight', 'feeding', 'returning'].includes(resident.state);
   }
 
@@ -167,7 +168,7 @@ class LivingInteractions {
         first.attention = { id: second.id, response }; first.attentionUntil = time + 1500;
         this.wildlife.meet(`neighbor-${response}`, first, second);
         if (this.play(first, second)) break;
-        if (['wandering', 'resting', 'drifting', 'cruising', 'exploring'].includes(first.state)) {
+        if (!first.lilyPadId && !first.padHop && ['wandering', 'resting', 'drifting', 'cruising', 'exploring'].includes(first.state)) {
           const point = first.body.position;
           const other = second.body.position;
           const direction = point.x < other.x ? -1 : 1;

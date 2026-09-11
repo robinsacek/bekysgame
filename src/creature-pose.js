@@ -37,13 +37,19 @@ function eyeGaze(resident) {
 }
 
 function frogJumpPose(resident, time) {
-  const blocked = resident.held || resident.recovery || resident.frown || resident.state === 'feeding';
+  const blocked = resident.held || resident.recovery || resident.frown || resident.state === 'feeding' || resident.immersion > 0.05;
   const airborne = !blocked && !resident.grounded;
   const flipping = airborne && resident.flipAt != null && time - resident.flipAt < 850;
   const progress = flipping ? Math.max(0, Math.min(1, (time - resident.flipAt) / 600)) : 0;
   return { airborne, rotation: progress * Math.PI * 2, tuck: flipping ? Math.sin(progress * Math.PI) : 0,
     extension: airborne && !flipping ? Math.min(1, Math.abs(resident.body.velocity.y) / 3.8) : 0,
     crouch: !blocked && resident.hopPrepareUntil > time ? Math.max(0, 1 - (resident.hopPrepareUntil - time) / 150) : 0 };
+}
+
+function frogSwimPose(resident, time) {
+  const swimming = !resident.held && !resident.grounded && !resident.recovery && resident.state !== 'feeding' && resident.immersion > 0.05;
+  const phase = time / 720 * Math.PI * 2 + (resident.phase || 0);
+  return { swimming, kick: swimming ? (Math.sin(phase) + 1) / 2 : 0, reach: swimming ? (Math.cos(phase) + 1) / 2 : 0 };
 }
 
 function applyCreaturePose(context, resident, time) {
@@ -73,11 +79,12 @@ function applyCreaturePose(context, resident, time) {
   if (resident.tingleUntil > time) context.rotate(Math.sin(time * 0.028) * 0.05);
   if (resident.species === 'frog') {
     const jump = frogJumpPose(resident, time);
+    const swim = frogSwimPose(resident, time);
     context.rotate(jump.rotation);
-    context.scale(1 + jump.crouch * 0.14 + jump.tuck * 0.16 - jump.extension * 0.08,
-      1 - jump.crouch * 0.22 - jump.tuck * 0.17 + jump.extension * 0.15);
+    context.scale(1 + jump.crouch * 0.14 + jump.tuck * 0.16 - jump.extension * 0.08 + swim.kick * 0.045,
+      1 - jump.crouch * 0.22 - jump.tuck * 0.17 + jump.extension * 0.15 - swim.kick * 0.035);
   } else if (!resident.held && resident.hopPrepareUntil > time) context.scale(1.06, 0.91);
   if (!resident.held && resident.comicReactionUntil > time) context.rotate(Math.sin(time * 0.015) * (resident.comicReaction === 'startle' ? 0.07 : 0.025));
 }
 
-module.exports = { drawingSize, applyCreaturePose, eyeGaze, feedingPose, frogJumpPose };
+module.exports = { drawingSize, applyCreaturePose, eyeGaze, feedingPose, frogJumpPose, frogSwimPose };

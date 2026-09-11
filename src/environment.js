@@ -94,6 +94,18 @@ class IslandEnvironment {
     return island.map.ecology.current * (1 - depth) ** 2 * channel * (0.85 + this.wind * 0.3);
   }
 
+  lilyPads() {
+    const island = this.island;
+    const start = island.layout.waterStart;
+    const end = island.layout.waterEnd || island.width;
+    return [0.08, 0.14, 0.205, 0.48, 0.54, 0.81, 0.87, 0.925].map((portion, index) => {
+      const radius = 26 + index * 7 % 18;
+      const positionX = start + (end - start) * portion + Math.sin(island.time * 0.00045 + index * 1.7) * 3;
+      return { id: `lily-${index}`, x: positionX, y: island.surfaceAt(positionX), radius, flower: index % 3 === 1,
+        angle: Math.atan2(island.surfaceAt(positionX + radius) - island.surfaceAt(positionX - radius), radius * 2) };
+    });
+  }
+
   swellAt(index) {
     const portion = index / (this.island.waves.length - 1);
     const eventStrength = this.event?.kind === 'spray-set' ? Math.sin((this.island.time - this.event.time) / this.rhythm.duration * Math.PI) ** 2 : 0;
@@ -119,6 +131,7 @@ class IslandEnvironment {
 
   snapshot() {
     return { wind: this.wind, energy: this.energy, sun: { ...this.sun }, particles: this.particles.length,
+      lilyPads: this.lilyPads(),
       event: this.event ? { ...this.event } : null, eventCounts: { ...this.eventCounts },
       wetSamples: this.shoreline.filter(point => point.wetness > 0).length, marks: this.shoreline.filter(point => point.mark > 0).length };
   }

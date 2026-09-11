@@ -47,6 +47,42 @@ export function drawEnvironment(art, context, island, time, camera, reducedMotio
   }
 }
 
+export function drawLilyPads(art, context, island) {
+  const { paint, mix, oval, colors } = art;
+  for (const [index, pad] of island.environment.lilyPads().entries()) {
+    const { radius } = pad;
+    const leaf = mix(colors.green, colors.yellow, 0.12 + index % 3 * 0.08);
+    context.save(); context.translate(pad.x, pad.y); context.rotate(pad.angle);
+    oval(context, 0, 4, radius * 1.06, radius * 0.31, paint(colors.ocean, 0.22));
+    context.strokeStyle = paint(colors.paper, 0.40); context.lineWidth = 1;
+    context.beginPath(); context.ellipse(0, 3, radius + 9, radius * 0.34, 0, 0.25, Math.PI * 1.9); context.stroke();
+    for (const offset of [2.5, 0]) {
+      context.beginPath(); context.moveTo(0, offset);
+      context.ellipse(0, offset, radius, radius * 0.31, 0, 0.28, Math.PI * 2 - 0.28);
+      context.closePath(); context.fillStyle = paint(offset ? mix(leaf, colors.ink, 0.32) : leaf); context.fill();
+    }
+    context.strokeStyle = paint(mix(leaf, colors.ink, 0.26), 0.65); context.lineWidth = 0.8; context.stroke();
+    context.strokeStyle = paint(mix(leaf, colors.paper, 0.45), 0.62); context.lineWidth = 0.8;
+    for (const angle of [0.75, 1.6, 2.5, 3.3, 4.15, 5.1]) {
+      context.beginPath(); context.moveTo(-2, 0);
+      context.quadraticCurveTo(Math.cos(angle) * radius * 0.4, Math.sin(angle) * radius * 0.08,
+        Math.cos(angle) * radius * 0.84, Math.sin(angle) * radius * 0.25); context.stroke();
+    }
+    oval(context, -radius * 0.38, -radius * 0.13, radius * 0.16, 1.2, paint(colors.paper, 0.32), -0.1);
+    if (pad.flower) {
+      const flowerX = -radius * 0.12;
+      for (let petal = 0; petal < 5; petal += 1) {
+        const angle = -Math.PI + petal * Math.PI / 4;
+        oval(context, flowerX + Math.cos(angle) * 6, -5 + Math.sin(angle) * 5, 3.8, 7,
+          paint(mix(colors.pink, colors.paper, 0.65 + petal % 2 * 0.18)), angle + Math.PI / 2);
+      }
+      oval(context, flowerX, -3, 4.5, 2.8, paint(colors.yellow));
+      oval(context, flowerX - 1, -4, 1.4, 1, paint(colors.paper, 0.75));
+    }
+    context.restore();
+  }
+}
+
 export function drawSwash(art, context, island, camera) {
   for (const point of island.environment.shoreline) {
     if (point.foam < 0.03 || point.x < camera.x - 12 || point.x > camera.x + camera.viewWidth + 12) continue;

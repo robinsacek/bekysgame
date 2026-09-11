@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Body } = require('matter-js');
 const { IslandPhysics } = require('./physics.js');
-const { drawingSize, applyCreaturePose, feedingPose, frogJumpPose } = require('./creature-pose.js');
+const { drawingSize, applyCreaturePose, feedingPose, frogJumpPose, frogSwimPose } = require('./creature-pose.js');
 
 test('frog jumping poses squash, stretch, turn and yield immediately to a grab or meal', () => {
   const resident = { species: 'frog', body: { velocity: { x: 1, y: -3 } }, grounded: false, flipAt: 1000, state: 'wandering' };
@@ -11,13 +11,27 @@ test('frog jumping poses squash, stretch, turn and yield immediately to a grab o
   assert.equal(turning.tuck, 1);
   assert.equal(frogJumpPose({ ...resident, body: { velocity: { x: 1, y: 0 } } }, 1300).rotation, Math.PI, 'The turn must continue through the top of the jump');
   assert.deepEqual(frogJumpPose(resident, 1300), turning, 'A frozen clock freezes the flip');
-  for (const priority of [{ held: true }, { state: 'feeding' }, { recovery: 'paddling' }, { grounded: true }, { frown: true }]) {
+  for (const priority of [{ held: true }, { state: 'feeding' }, { recovery: 'paddling' }, { grounded: true }, { frown: true }, { immersion: 0.5 }]) {
     const pose = frogJumpPose({ ...resident, ...priority }, 1300);
     assert.equal(pose.rotation, 0);
     assert.equal(pose.tuck, 0);
   }
   assert.ok(frogJumpPose({ ...resident, flipAt: null }, 1300).extension > 0.7);
   assert.ok(frogJumpPose({ ...resident, grounded: true, hopPrepareUntil: 1350 }, 1300).crouch > 0.6);
+});
+
+test('frog swimming strokes cycle in active time and yield to grabs, landings, and meals', () => {
+  const resident = { species: 'frog', body: { velocity: { x: 1, y: 0 } }, immersion: 0.5, grounded: false, state: 'swimming', phase: 0 };
+  const strokes = [0, 180, 360, 540].map(time => frogSwimPose(resident, time));
+  assert.ok(strokes.every(pose => pose.swimming));
+  assert.equal(Math.max(...strokes.map(pose => pose.kick)), 1);
+  assert.equal(Math.min(...strokes.map(pose => pose.kick)), 0);
+  assert.notEqual(strokes[0].reach, strokes[2].reach, 'Front legs must paddle as well as hind legs');
+  assert.deepEqual(frogSwimPose(resident, 180), strokes[1], 'Pausing active time must freeze the stroke');
+  assert.equal(frogJumpPose(resident, 180).airborne, false, 'Swimming is not an airborne hop');
+  for (const priority of [{ held: true }, { grounded: true }, { immersion: 0 }, { state: 'feeding' }]) {
+    assert.deepEqual(frogSwimPose({ ...resident, ...priority }, 180), { swimming: false, kick: 0, reach: 0 });
+  }
 });
 
 test('eating mouths cycle smoothly by species only during a live production bite', () => {

@@ -6,7 +6,7 @@ import { drawMapHabitat } from './map-art.js';
 import { drawForagePatch, drawFoodPortion } from './forage-art.js';
 import { drawCreatureBubbles } from './creature-bubbles.js';
 import { projectShadow } from './shadows.js';
-import { drawEnvironment, drawSwash, drawWeather } from './environment-art.js';
+import { drawEnvironment, drawLilyPads, drawSwash, drawWeather } from './environment-art.js';
 import { comicPose } from './antics.js';
 
 const TAU = Math.PI * 2;
@@ -403,6 +403,7 @@ export class IslandScene {
     context.fillStyle = wash; context.fill();
     waterPath(); context.strokeStyle = paint(paper, 0.87); context.lineWidth = 2.5; context.stroke();
     waterPath(); context.strokeStyle = paint(ocean, 0.40); context.lineWidth = 0.7; context.stroke();
+    drawLilyPads(this, context, island);
     const glitterX = this.width * (0.5 + Math.cos(island.environment.sun.azimuth) * 0.30);
     for (let index = 0; index < 35; index += 1) {
       const positionX = waterStart + (waterEnd - waterStart) * index / 34;
@@ -519,7 +520,8 @@ export class IslandScene {
     const residents = [...(island.wildlife?.residents || [])].sort((first, second) => first.depth - second.depth);
     const drawResident = resident => {
       if (resident.body.position.x < camera.x - 90 || resident.body.position.x > camera.x + camera.viewWidth + 90) return;
-      shadow({ ...resident.body.position, width: resident.width, height: resident.height, depth: resident.depth, aquatic: resident.immersion > 0.5 });
+      shadow({ ...resident.body.position, width: resident.width, height: resident.height, depth: resident.depth,
+        floating: Boolean(resident.lilyPadId), aquatic: resident.immersion > 0.5 });
       context.save(); context.translate(Math.sin(time * 0.0015 + resident.body.position.y * 0.04) * resident.immersion * 1.6, 0);
       if (!drawLocalResident(this, context, resident, time)) drawCreature(this, context, resident, time);
       drawReaction(this, context, resident, time);
@@ -543,12 +545,13 @@ export class IslandScene {
     };
     const sprites = [...(island.wildlife?.foraging.patches || []).filter(patch => patch.x > camera.x - 50 && patch.x < camera.x + camera.viewWidth + 50).map(patch => ({ depth: patch.depth, priority: -1, draw: () => drawForagePatch(this, context, patch, time, this.wind) })),
       ...island.props.map(prop => ({ depth: prop.depth || 0, priority: 0, draw: () => drawToy(prop) })),
-      ...residents.map(resident => ({ depth: resident.depth, priority: 2, draw: () => drawResident(resident) })),
+      ...residents.map(resident => ({ depth: resident.depth, priority: 2, aboveWater: resident.species === 'frog' && resident.immersion < 0.08
+        && resident.body.position.x > island.layout.waterStart && resident.body.position.x < island.layout.waterEnd, draw: () => drawResident(resident) })),
       { depth: island.blob.depth, priority: island.blob.depth > 18 ? 1 : 3, draw: drawBlobby }].sort((first, second) => first.depth - second.depth || first.priority - second.priority);
-    for (const sprite of sprites.filter(item => item.depth <= 18)) sprite.draw();
+    for (const sprite of sprites.filter(item => item.depth <= 18 && !item.aboveWater)) sprite.draw();
     this.drawWater(context, island, time);
     drawSwash(this, context, island, camera);
-    for (const sprite of sprites.filter(item => item.depth > 18)) sprite.draw();
+    for (const sprite of sprites.filter(item => item.depth > 18 || item.aboveWater)) sprite.draw();
     context.fillStyle = paint(this.colors.yellow, this.map.warmth * 0.055);
     context.fillRect(camera.x, 0, camera.viewWidth, this.height);
     drawWeather(this, context, island, time, camera, reducedMotion, false);

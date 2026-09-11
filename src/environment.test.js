@@ -27,6 +27,33 @@ test('environment fields are deterministic, bounded, map-specific, and independe
   } finally { for (const island of islands) island.dispose(); }
 });
 
+test('lily pads stay on the wave surface, drift gently, and freeze with active time on every island', () => {
+  for (const map of ['lagoon', 'pools', 'sunset']) {
+    const island = new IslandPhysics(3200, 900, map, true);
+    try {
+      const pads = island.environment.lilyPads();
+      assert.equal(pads.length, 8);
+      assert.equal(new Set(pads.map(pad => pad.id)).size, pads.length);
+      assert.ok(pads.filter(pad => pad.flower).length >= 2);
+      assert.deepEqual(island.environment.lilyPads(), pads, 'A paused simulation must keep the pads still');
+      for (const pad of pads) {
+        assert.ok(pad.x - pad.radius > island.layout.waterStart);
+        assert.ok(pad.x + pad.radius < island.layout.waterEnd);
+        assert.equal(pad.y, island.surfaceAt(pad.x));
+        assert.ok(Number.isFinite(pad.angle));
+      }
+      for (const wave of island.waves) wave.offset += 8;
+      const raised = island.environment.lilyPads();
+      assert.ok(raised.every((pad, index) => Math.abs(pad.y - pads[index].y - 8) < 0.001), 'Pads must follow the physical waves');
+      island.time += 1500;
+      const drifted = island.environment.snapshot().lilyPads;
+      assert.ok(drifted.some((pad, index) => Math.abs(pad.x - raised[index].x) > 0.5));
+      assert.ok(drifted.every((pad, index) => Math.abs(pad.x - raised[index].x) < 6));
+      assert.ok(drifted.every(pad => pad.y === island.surfaceAt(pad.x)));
+    } finally { island.dispose(); }
+  }
+});
+
 test('shore wetness agrees with the surface and dries within four active seconds', () => {
   const island = new IslandPhysics(3200, 900, 'lagoon', true);
   try {
