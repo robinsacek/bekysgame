@@ -7,9 +7,10 @@ A small translucent rainbow character named **Blobby**, exploring three living t
 - Each map is a bounded 3200 by 900 world, wider than a screen, with a real far shore, curved banks, uneven physical seabed, textured sand, reef gardens, and map-specific vegetation and lighting.
 - Blobby's resting silhouette matches the logo. Two or three independent grips stretch, squeeze, and reshape its moderately translucent body. Releasing restores elasticity; it cannot tear.
 - A broad foreground beach is usable space: Blobby, loose toys, and land residents can move into it, with depth-aware picking, collisions, ordering, and moving contact shadows. Airborne and floating bodies cast height- or water-relative shadows.
-- Eleven residents per area: two fish, a crab, tortoise, shorebird, jellyfish, shark, and octopus, plus a local pair of iguanas, starfish, or rabbits and Momo the monkey. Map-specific bird, fish, and marine variants have different markings, proportions, names, and movement profiles.
+- Thirteen residents per area: two fish, a crab, tortoise, shorebird, jellyfish, shark, and octopus, plus a local pair of iguanas, starfish, or rabbits, Momo the monkey, and two little frogs, Puddle and Sprig. Map-specific bird, fish, and marine variants have different markings, proportions, names, and movement profiles.
 - Residents mix broad wandering with purposeful approaches to food, toys, habitats, neighbors, and Blobby. Longer journeys can finish without constant social interruption. Fish school; birds bank, flap, glide, and land; misplaced residents visibly react and return toward an appropriate habitat.
 - Every species eats renewable food that can also be harvested and carried by the player. Residents approach, nibble, chew, gulp, peck or filter with species-specific mouth motion, then show a larger heart and a satisfied smile before returning to other activities.
+- Puddle and Sprig catch the same flies as the lizards with flicking tongues. Their ordinary hops have a crouch, springy legs, and a soft landing; occasional playful jumps include a tucked somersault. Held frogs, meals, and recovery take priority over acrobatics.
 - Residents play short games of tag, birds tease fish, and octopuses play peekaboo. A close jellyfish encounter can produce a brief comic tingle and retreat. Play respects grabs, recovery, and the picnic; there is no health loss, injury, or removal of residents.
 - The shark occasionally stalks and lunges while nearby aquatic residents flee. Its animated jaw has a tapered mouth, gums, and small teeth. Nobody is injured or removed.
 - Each character draws a fresh comic-event baseline of 1-7 active-play minutes. Greetings, play, shared meals, escapes, and habitat returns raise a decaying probability bonus and advance that deadline. A completed gag resets the bonus and draws a new baseline. Per-character and global cooldowns prevent repeated-trigger spam; held, recovering, or objective-busy residents defer their event.
@@ -34,10 +35,10 @@ All areas retain the four optional objectives and shared essentials, but differ 
 
 - Pick bananas from the far-left tree for Momo the monkey. Momo also approaches the grove and feeds itself when hungry.
 - Pull grass tufts for tortoises and rabbits, and carrots from Sunset Cove's dunes for Clover and Thistle.
-- Catch a small fly swarm for Mango, Fern, or Piper. Each swarm is one draggable food portion; the iguanas use a tongue-catching action.
+- Catch a small fly swarm for Mango, Fern, Piper, or the little frogs Puddle and Sprig. Each swarm is one draggable food portion; the iguanas and frogs use a tongue-catching action.
 - Pluck underwater seaweed for fish and starfish. Fish also nibble collectible plankton clouds; jellyfish pulse and filter those clouds.
 - Gather strand scraps for Pebble or edible reef shellfish for octopuses and starfish. The journal's delivery shells are separate, inedible toys.
-- Catch unnamed bait fish for sharks and the Lagoon/Cove birds. Bait fish are renewable food, never one of the eleven named residents.
+- Catch unnamed bait fish for sharks and the Lagoon/Cove birds. Bait fish are renewable food, never one of the thirteen named residents.
 
 Hold compatible food calmly near an unheld resident's face at the same beach depth and in its suitable habitat, or release it nearby. A meal needs a continuous short bite, not a fast pass. Held animals, fright, recovery and objective visits retain priority. A completed meal updates hunger, produces one larger heart for about two active seconds, and a happier face for about five; distress overrides that expression immediately. Both player-assisted and autonomous meals use the same rules.
 
@@ -121,6 +122,8 @@ For a focused audio/input run in PowerShell, set `$env:BLOB_FEATURES='audio'` be
 For focused feeding checks, set `$env:BLOB_FEATURES='feeding'`. Optional `$env:BLOB_CASES='desktop'` selects a viewport and `$env:BLOB_FEEDING_CASES='pools:pearl'` selects a map/resident; comma-separated values are supported. Run `npm run test:browser`, then remove those selectors before full regression checks. The normal browser matrix includes feeding automatically.
 
 For banana and treasure checks, set `$env:BLOB_FEATURES='discoveries'` and run `npm run test:browser`. This uses real mouse/touch input on all three maps to pick bananas, feed Momo, open chests, collect all six treasures, and verify reactions, grip cleanup, pause, map retention, and reset. Use `$env:BLOB_CASES='desktop,tablet-native-touch,phone,ipad-dark'` for the focused desktop/mobile matrix, then remove both selectors afterward.
+
+For frog checks, set `$env:BLOB_FEATURES='frogs'` and `$env:BLOB_CASES='desktop,tablet-native-touch,phone'`, then run `npm run test:browser`. Both frogs eat player-offered flies on all maps, with held and released meals, tongue motion, hearts, and cleanup. A controlled browser clock observes ordinary hops and a naturally scheduled somersault without changing gameplay timers. Screenshots retain the hop, airborne turn, and upright landing. Remove both selectors afterward.
 
 For stage visual inspection, set `$env:BLOB_FEATURES='visual'`, `$env:BLOB_STAGE='v4-final'`, and `$env:BLOB_CASES='desktop,phone'`, then run `npm run test:browser`. This captures every map at shore/reef and during its signature event, renders repertoire pose galleries, and checks parallax, refraction clipping, cache limits, fallback rendering, and frozen event state. Remove these three environment variables before a full regression run. Stage reports identify their scope and tested local HTML hash.
 

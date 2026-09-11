@@ -382,7 +382,7 @@ class IslandPhysics {
 
   move(pointerId, point) {
     const drag = this.drags.get(pointerId);
-    const landResident = drag?.creature && ['crab', 'tortoise', 'lizard', 'rabbit', 'monkey'].includes(drag.creature.species);
+    const landResident = drag?.creature && ['crab', 'tortoise', 'lizard', 'rabbit', 'monkey', 'frog'].includes(drag.creature.species);
     const looseProp = drag?.prop && !drag.prop.anchor && !drag.prop.ropes;
     const blob = drag?.kind === 'blob' && [...this.drags.values()].filter(item => item.kind === 'blob').length === 1;
     if (this.expedition && (landResident || looseProp || blob)) {

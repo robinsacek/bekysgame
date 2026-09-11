@@ -8,6 +8,7 @@ const DIETS = {
   lizard: { food: 'insects', foods: ['insects'], routine: 'insect-hunting' }, starfish: { food: 'algae', foods: ['algae', 'shell-bed'], routine: 'reef-grazing' },
   octopus: { food: 'shell-bed', foods: ['shell-bed'], routine: 'probing' }, shark: { food: 'bait-fish', foods: ['bait-fish'], routine: 'gulping' },
   monkey: { food: 'banana', foods: ['banana'], routine: 'banana-munching' },
+  frog: { food: 'insects', foods: ['insects'], routine: 'fly-catching' },
 };
 const FOODS = {
   grass: { medium: 'land', radius: 12 }, carrot: { medium: 'land', radius: 12 }, banana: { medium: 'land', radius: 16 },
@@ -15,7 +16,7 @@ const FOODS = {
   plankton: { medium: 'water', radius: 16 }, algae: { medium: 'water', radius: 14 },
   'shell-bed': { medium: 'water', radius: 12 }, 'bait-fish': { medium: 'water', radius: 15 },
 };
-const LAND = new Set(['crab', 'tortoise', 'rabbit', 'lizard', 'monkey']);
+const LAND = new Set(['crab', 'tortoise', 'rabbit', 'lizard', 'monkey', 'frog']);
 const PRIORITY = new Set(['startled', 'fleeing', 'returning', 'stalking', 'lunging', 'toy-play', 'inspecting', 'foraging', 'snacking', 'visiting', 'visiting-flight', 'curious', 'following', 'playing', 'companion']);
 const MAX_PORTIONS = 24;
 const MEAL_DWELL = 1500;
@@ -207,7 +208,7 @@ class Foraging {
     if (Math.abs(portion.depth - resident.depth) > 16) return false;
     if (LAND.has(resident.species) && (point.y < this.island.floorAt(point.x) - 70 || point.y > this.island.floorAt(point.x) + 4)) return false;
     const mouth = this.mouthFor(resident);
-    const reach = portion.radius + 20 + (resident.species === 'lizard' && portion.foodType === 'insects' ? 22 : resident.species === 'bird' ? 10 : resident.height * 0.16);
+    const reach = portion.radius + 20 + (['lizard', 'frog'].includes(resident.species) && portion.foodType === 'insects' ? 22 : resident.species === 'bird' ? 10 : resident.height * 0.16);
     if (distance(point, mouth) > reach) return false;
     if (Math.hypot(portion.body.velocity.x, portion.body.velocity.y) > 1.15
       || Math.hypot(portion.body.velocity.x - resident.body.velocity.x, portion.body.velocity.y - resident.body.velocity.y) > 1.35) return false;

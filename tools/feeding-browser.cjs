@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const readState = page => page.evaluate(() => window.__blobIsland.snapshot());
-const LAND = new Set(['crab', 'tortoise', 'lizard', 'rabbit', 'monkey']);
+const LAND = new Set(['crab', 'tortoise', 'lizard', 'rabbit', 'monkey', 'frog']);
 
 async function screenPoint(page, point) {
   const state = await readState(page);
@@ -89,7 +89,7 @@ async function mealCase(page, input, config, output, request) {
     .sort((first, second) => Math.abs(first.x - recipient.x) - Math.abs(second.x - recipient.x));
   assert.ok(sources.length, `${request.map}/${request.id} needs a visible source for ${request.food}`);
   const source = sources[0];
-  const destination = { x: source.x + (request.food === 'banana' ? 85 : -Math.max(70, recipient.width * 0.55)),
+  const destination = { x: source.x + (request.food === 'banana' || recipient.species === 'frog' ? 85 : -Math.max(70, recipient.width * 0.55)),
     y: LAND.has(recipient.species) ? state.ground - recipient.height * 0.41 + source.depth
       : recipient.species === 'bird' ? state.water - 75 : ['starfish', 'octopus'].includes(recipient.species) ? source.y - recipient.height * 0.5 - 10
         : request.food === 'algae' ? source.y - 90 : Math.max(state.water + recipient.height * 0.65 + 28, source.y) };
@@ -110,6 +110,8 @@ async function mealCase(page, input, config, output, request) {
   }
   assert.ok(portion && state.grips.some(grip => grip.bodyId === portion.id), `A visible ${request.food} source must yield the held physical portion`);
   assert.equal(state.foodPatches.find(patch => patch.id === source.id).available, false);
+  const heldGrip = state.grips.find(grip => grip.bodyId === portion.id);
+  const gripOffset = { x: heldGrip.target.x - portion.x, y: heldGrip.target.y - portion.y };
   const portionId = portion.portionId;
   const previousMeals = state.creatures.find(resident => resident.id === request.id).meals;
   let extraId = null;
@@ -137,6 +139,7 @@ async function mealCase(page, input, config, output, request) {
     if (!released) {
       const point = { x: recipient.x + recipient.direction * (recipient.width * 0.32 + 23),
         y: recipient.species === 'bird' ? Math.min(state.water + 8, recipient.y + 5) : recipient.y - recipient.height * 0.08 };
+      point.x += gripOffset.x; point.y += gripOffset.y;
       await input.send('move', point);
     }
     await page.clock.runFor(66);
@@ -146,18 +149,21 @@ async function mealCase(page, input, config, output, request) {
       if (!eating && recipient.feedingPose.open > 0.25) eating = await capture(page, output, name, 'eating', request.id);
       if (request.released && !released) {
         const offered = state.props.find(prop => prop.portionId === portionId);
-        await input.send('up', offered); released = true;
+        if (recipient.species !== 'frog' || recipient.grounded && Math.abs(offered.physicalY - recipient.physicalY) < 12) {
+          await input.send('up', offered); released = true;
+        }
       }
     }
   }
   assert.ok(completed, `${request.map}/${request.id} must consume ${request.food} by a calm real-input offer`);
+  assert.ok(!request.released || released, 'A released-food case must release the portion before it is consumed');
   assert.ok(eating, 'Eating must be visibly sampled before consumption');
   assert.ok(openings.length >= 3 && Math.max(...openings) - Math.min(...openings) > 0.3, 'The actual mouth must naturally open and close during the bite');
   recipient = completed.creatures.find(resident => resident.id === request.id);
   assert.equal(recipient.meals, previousMeals + 1);
   assert.equal(recipient.lastMeal.assisted, true);
   assert.ok(recipient.needs.hunger < 0.03);
-  assert.equal(completed.creatures.length, 11);
+  assert.equal(completed.creatures.length, 13);
   assert.equal(completed.props.some(prop => prop.portionId === portionId), false);
   assert.equal(completed.grips.some(grip => grip.bodyId === portion.id), false);
   if (extraId) assert.ok(completed.grips.some(grip => grip.bodyId === extraId), 'Consuming one native-held portion must preserve the other grip');
@@ -276,6 +282,63 @@ async function treasureCase(page, input, config, output, map) {
   return report;
 }
 
+async function frogPlayCase(page, config, output) {
+  await page.locator('[data-map="lagoon"]').click({ force: true });
+  await page.locator('#reset').click({ force: true });
+  await page.clock.runFor(1300);
+  let state = await readState(page);
+  const deadline = state.time + 450000;
+  let normalHop = null;
+  let upsideDown = null;
+  let landing = null;
+  let flippingId = null;
+  const turns = [];
+  const hops = new Map();
+  while (state.time < deadline && (!normalHop || !landing)) {
+    const active = state.creatures.some(resident => resident.species === 'frog' && resident.antic === 'somersault');
+    await page.clock.runFor(!normalHop ? 33 : active ? 66 : 250);
+    state = await readState(page);
+    assert.equal(state.finite, true);
+    for (const frog of state.creatures.filter(resident => resident.species === 'frog')) {
+      if (frog.grounded || frog.antic === 'somersault') hops.delete(frog.id);
+      else {
+        const hop = hops.get(frog.id) || { extension: 0, height: 0 };
+        hop.extension = Math.max(hop.extension, frog.jumpPose.extension);
+        hop.height = Math.max(hop.height, state.ground - frog.height * 0.41 - frog.physicalY);
+        hops.set(frog.id, hop);
+      }
+      const hop = hops.get(frog.id);
+      if (!normalHop && hop?.extension > 0.6 && hop.height > 12) {
+        await seek(page, frog.x);
+        normalHop = { ...frog, observedHop: { ...hop } };
+        await page.screenshot({ path: path.join(output, `frogs-${config.name}-hop.png`) });
+      }
+      if (!flippingId && frog.jumpPose.rotation > 0.2) flippingId = frog.id;
+      if (frog.id !== flippingId) continue;
+      if (frog.jumpPose.rotation > 0) turns.push({ time: state.time, resident: frog });
+      if (!upsideDown && frog.jumpPose.rotation > Math.PI * 0.65 && frog.jumpPose.rotation < Math.PI * 1.25) {
+        await seek(page, frog.x);
+        upsideDown = (await readState(page)).creatures.find(resident => resident.id === frog.id);
+        await page.screenshot({ path: path.join(output, `frogs-${config.name}-somersault.png`) });
+      }
+      if (upsideDown && frog.grounded && frog.jumpPose.rotation === 0) {
+        landing = frog;
+        await seek(page, frog.x);
+        await page.screenshot({ path: path.join(output, `frogs-${config.name}-landing.png`) });
+      }
+    }
+  }
+  assert.ok(normalHop, 'Untouched frogs must make visible ordinary hops');
+  assert.ok(upsideDown && landing, 'An occasional, naturally scheduled somersault must turn in the air and land upright');
+  assert.ok(turns.length >= 4, 'The real turn must be observed over multiple animation frames');
+  assert.ok(Math.max(...turns.map(turn => turn.resident.jumpPose.rotation)) > Math.PI * 1.8, 'The rendered somersault must turn all the way around');
+  assert.ok(turns.some(turn => turn.resident.jumpPose.tuck > 0.8), 'The frog must tuck its legs during the flip');
+  const report = { kind: 'frog-play', passed: true, normalHop, upsideDown, landing, turns, time: state.time };
+  fs.writeFileSync(path.join(output, `frogs-${config.name}-play.json`), JSON.stringify(report, null, 2));
+  console.log(`PASS frogs ${config.name}: ordinary hops, natural airborne somersault and upright landing`);
+  return report;
+}
+
 async function exerciseFeeding(page, config, output) {
   await page.clock.install({ time: new Date('2026-09-09T14:00:00Z') });
   await page.clock.pauseAt(new Date('2026-09-09T14:00:00.100Z'));
@@ -284,7 +347,8 @@ async function exerciseFeeding(page, config, output) {
   const input = await inputFor(page, config);
   const thorough = config.name === 'desktop' || config.nativeTouch;
   const discoveries = process.env.BLOB_FEATURES === 'discoveries';
-  const requests = [...(discoveries ? [] : [{ map: 'lagoon', id: 'fin', food: 'algae' },
+  const frogs = process.env.BLOB_FEATURES === 'frogs';
+  const requests = [...(discoveries || frogs ? [] : [{ map: 'lagoon', id: 'fin', food: 'algae' },
     ...(thorough ? [{ map: 'lagoon', id: 'drift', food: 'bait-fish' }, { map: 'lagoon', id: 'skipper', food: 'bait-fish' },
       { map: 'lagoon', id: 'mango', food: 'insects' }, { map: 'lagoon', id: 'fern', food: 'insects' },
       { map: 'pools', id: 'aster', food: 'algae' }, { map: 'pools', id: 'pearl', food: 'shell-bed' }] : []),
@@ -293,12 +357,14 @@ async function exerciseFeeding(page, config, output) {
     ...(config.name === 'desktop' ? [{ map: 'lagoon', id: 'moss', food: 'grass', released: true }, { map: 'lagoon', id: 'pebble', food: 'shore-scraps' },
       { map: 'lagoon', id: 'lumi', food: 'plankton' }, { map: 'lagoon', id: 'ollie', food: 'shell-bed' },
       { map: 'pools', id: 'skipper', food: 'insects' }, { map: 'sunset', id: 'skipper', food: 'bait-fish' }] : [])]),
-    ...['lagoon', 'pools', 'sunset'].map(map => ({ map, id: 'momo', food: 'banana' }))]
+    ...(frogs ? [] : ['lagoon', 'pools', 'sunset'].map(map => ({ map, id: 'momo', food: 'banana' }))),
+    ...(discoveries ? [] : ['lagoon', 'pools', 'sunset'].flatMap(map => ['puddle', 'sprig'].map(id => ({ map, id, food: 'insects', released: id === 'sprig' }))))]
     .filter(request => !process.env.BLOB_FEEDING_CASES || process.env.BLOB_FEEDING_CASES.split(',').includes(`${request.map}:${request.id}`));
   assert.ok(requests.length, 'The feeding selector must execute real meal cases');
   const reports = [];
   try {
     for (const request of requests) reports.push(await mealCase(page, input, config, output, request));
+    if (frogs || (process.env.BLOB_FEATURES || 'all') === 'all') reports.push(await frogPlayCase(page, config, output));
     if (discoveries || (process.env.BLOB_FEATURES || 'all') === 'all') {
       for (const map of ['lagoon', 'pools', 'sunset']) reports.push(await treasureCase(page, input, config, output, map));
     }

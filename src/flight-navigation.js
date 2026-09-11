@@ -29,7 +29,7 @@ function corridorClear(first, second, obstacles, validPoint) {
   return true;
 }
 
-function planFlightPath(start, goal, obstacles, validPoint = () => true) {
+function planFlightPath(start, goal, obstacles, validPoint = () => true, escapeObstacles = obstacles) {
   const containing = obstacles.filter(bounds => inside(start, bounds));
   if (containing.length) {
     const exits = [
@@ -37,7 +37,7 @@ function planFlightPath(start, goal, obstacles, validPoint = () => true) {
       { x: Math.max(...containing.map(bounds => bounds.max.x)) + 6, y: start.y },
       { x: start.x, y: Math.min(...containing.map(bounds => bounds.min.y)) - 6 },
       { x: start.x, y: Math.max(...containing.map(bounds => bounds.max.y)) + 6 },
-    ].filter(point => validPoint(point) && !obstacles.some(bounds => inside(point, bounds))
+    ].filter(point => validPoint(point) && !escapeObstacles.some(bounds => inside(point, bounds))
       && containing.every(bounds => point.x !== start.x
         ? (start.x - (bounds.min.x + bounds.max.x) / 2) * (point.x - start.x) >= 0
         : (start.y - (bounds.min.y + bounds.max.y) / 2) * (point.y - start.y) >= 0))
@@ -45,7 +45,7 @@ function planFlightPath(start, goal, obstacles, validPoint = () => true) {
     const surrounding = obstacles.filter(bounds => !inside(start, bounds));
     for (const exit of exits) {
       if (!corridorClear(start, exit, surrounding, validPoint)) continue;
-      const onward = planFlightPath(exit, goal, obstacles, validPoint);
+      const onward = planFlightPath(exit, goal, obstacles, validPoint, escapeObstacles);
       if (onward.length) return [exit, ...onward];
     }
     return [];
@@ -119,9 +119,9 @@ class FlightNavigation {
         ? this.island.layout.water - 70 : this.island.layout.ground - 150;
       const cruise = Math.abs(goal.x - body.position.x) > 110 ? { x: goal.x, y: Math.min(goal.y, cruiseHeight) } : goal;
       const plan = barriers => {
-        const outward = planFlightPath(body.position, cruise, barriers, validPoint);
+        const outward = planFlightPath(body.position, cruise, barriers, validPoint, obstacles);
         if (!outward.length || distance(cruise, goal) <= 1) return outward;
-        const arrival = planFlightPath(cruise, goal, barriers, validPoint);
+        const arrival = planFlightPath(cruise, goal, barriers, validPoint, obstacles);
         return arrival.length ? [...outward, ...arrival] : [];
       };
       let points = plan(obstacles);

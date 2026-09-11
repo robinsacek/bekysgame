@@ -418,7 +418,7 @@ async function exerciseRhythms(page, config) {
     assert.equal(active.environment.event?.kind, kind, `${mapId}: the signature must arrive on the unmodified simulation clock`);
     assert.equal(active.environment.eventCounts[kind], 1);
     assert.equal(active.finite, true);
-    assert.equal(active.creatures.length, 11);
+    assert.equal(active.creatures.length, 13);
     assert.ok(active.objectives.entries.every(entry => !entry.complete && entry.progress === 0), 'Environmental rhythms must not earn journal progress');
     await page.mouse.move(5, config.viewport.height - 8);
     await page.screenshot({ path: path.join(output, `${stage}-${config.name}-${mapId}-event.png`) });
@@ -552,14 +552,14 @@ async function run() {
           let visualResult;
           let feedingResult;
           if (features === 'visual') visualResult = await exerciseVisual(page, config);
-          else if (['feeding', 'discoveries'].includes(features)) feedingResult = await exerciseFeeding(page, config, output);
+          else if (['feeding', 'discoveries', 'frogs'].includes(features)) feedingResult = await exerciseFeeding(page, config, output);
           else if (process.env.BLOB_FEATURES !== 'coast') {
             await exercise(page, context, config);
             if (process.env.BLOB_FEATURES !== 'audio') await exerciseIslands(page, config);
             audioResult = await exerciseAudio(page, config, output);
           }
           if (features === 'all') feedingResult = await exerciseFeeding(page, config, output);
-          if (!['audio', 'visual', 'feeding', 'discoveries'].includes(features)) await exerciseCoast(page, config, output);
+          if (!['audio', 'visual', 'feeding', 'discoveries', 'frogs'].includes(features)) await exerciseCoast(page, config, output);
           const animation = await page.evaluate(async () => {
             const canvas = document.getElementById('world');
             const context = canvas.getContext('2d');

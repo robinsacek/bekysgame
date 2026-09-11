@@ -6,11 +6,11 @@ const { Foraging } = require('./foraging.js');
 const { FlightNavigation } = require('./flight-navigation.js');
 const { residentSound } = require('./sound-context.js');
 const { IndividualLife } = require('./individuality.js');
-const { feedingPose } = require('./creature-pose.js');
+const { feedingPose, frogJumpPose } = require('./creature-pose.js');
 const clamp = (value, lower, upper) => Math.max(lower, Math.min(upper, value));
 const distance = (first, second) => Math.hypot(first.x - second.x, first.y - second.y);
 const SWIMMERS = new Set(['fish', 'jellyfish', 'shark', 'octopus', 'starfish']);
-const LAND_RESIDENTS = new Set(['crab', 'tortoise', 'lizard', 'rabbit', 'monkey']);
+const LAND_RESIDENTS = new Set(['crab', 'tortoise', 'lizard', 'rabbit', 'monkey', 'frog']);
 
 class Wildlife {
   constructor(island) {
@@ -45,6 +45,8 @@ class Wildlife {
       this.residents.push(resident);
     }
     this.residents.push(this.create('momo', 'Momo', 'monkey', island.tree.base.x + 120, layout.ground - 24, 52, 56, 1.25));
+    this.residents.push(this.create('puddle', 'Puddle', 'frog', island.width * 0.12, layout.ground - 13, 34, 30, 1.25),
+      this.create('sprig', 'Sprig', 'frog', island.width * 0.235, layout.ground - 11, 28, 25, 1.1));
     this.interactions = new LivingInteractions(this);
     this.comedy = new ComicMoments(this);
     this.foraging = new Foraging(this);
@@ -65,7 +67,7 @@ class Wildlife {
       chamfer: { radius: Math.min(height * 0.38, 12) }, label: `creature:${species}`,
       friction: 0.015, frictionStatic: 0.03, frictionAir: 0.025, restitution: 0.12, collisionFilter: { group: this.group },
     });
-    Body.setMass(body, species === 'tortoise' ? 1.15 : species === 'shark' ? 2.8 : species === 'octopus' ? 0.55 : species === 'fish' ? 0.15 : 0.22);
+    Body.setMass(body, species === 'tortoise' ? 1.15 : species === 'shark' ? 2.8 : species === 'octopus' ? 0.55 : species === 'fish' ? 0.15 : species === 'frog' ? 0.09 : 0.22);
     Body.setInertia(body, Infinity);
     Composite.add(this.island.engine.world, body);
     return { id, name, species, body, width, height, speed, appearance: local.appearance || species, home: { x: positionX, y: positionY }, target: { x: positionX, y: positionY },
@@ -182,7 +184,7 @@ class Wildlife {
     const surface = this.island.surfaceAt(point.x);
     const horizontal = point.x > this.island.layout.waterStart && point.x < (this.island.layout.waterEnd || this.island.width);
     const immersion = horizontal ? clamp((point.y + height * 0.41 - surface) / (height * 0.82), 0, 1) : 0;
-    const supports = [this.island.dock, ...this.island.props.map(prop => prop.body)].filter(Boolean);
+    const supports = [this.island.dock, ...this.island.props.filter(prop => Math.abs((prop.depth || 0) - resident.depth) < 25).map(prop => prop.body)].filter(Boolean);
     resident.grounded = body.velocity.y > -1.5 && (body.bounds.max.y >= this.island.floorAt(point.x) - 3
       || supports.some(support => support.bounds.min.x < body.bounds.max.x && support.bounds.max.x > body.bounds.min.x
         && Math.abs(body.bounds.max.y - support.bounds.min.y) < 4));
@@ -414,6 +416,7 @@ class Wildlife {
       const body = resident.body;
       this.updateMedium(resident);
       resident.held = this.held(body);
+      if (resident.species === 'frog' && (resident.held || resident.grounded || resident.recovery || resident.state === 'feeding')) resident.flipAt = null;
       if (resident.species === 'bird') {
         const touchingSkin = this.island.engine.pairs.list.filter(pair => pair.isActive &&
           (pair.bodyA.parent === body && pair.bodyB.parent.label === 'jelly' || pair.bodyB.parent === body && pair.bodyA.parent.label === 'jelly')).length;
@@ -447,7 +450,7 @@ class Wildlife {
         resident.exitDock = false; resident.dockClimbed = false; resident.recoverySample = null; resident.recoveryStalled = false;
       } else {
         if (resident.outsideSince === null) resident.outsideSince = time;
-        const poses = { fish: 'flopping', jellyfish: 'washed-back', shark: 'wriggling', octopus: 'crawling-back', starfish: 'curling', tortoise: 'paddling', crab: 'paddling', bird: 'taking-off', lizard: 'paddling', rabbit: 'doggy-paddle', monkey: 'paddling' };
+        const poses = { fish: 'flopping', jellyfish: 'washed-back', shark: 'wriggling', octopus: 'crawling-back', starfish: 'curling', tortoise: 'paddling', crab: 'paddling', bird: 'taking-off', lizard: 'paddling', rabbit: 'doggy-paddle', monkey: 'paddling', frog: 'paddling' };
         resident.recovery = poses[resident.species];
         if (!resident.recoverySample || time - resident.recoverySample.time > 1400) {
           resident.recoveryStalled = resident.recoverySample ? distance(body.position, resident.recoverySample.point) < 12 : false;
@@ -551,7 +554,7 @@ class Wildlife {
         && resident.depth < 18 && Math.abs(offset.x) > 25 && resident.detourUntil <= time) {
         const frontX = body.position.x + Math.sign(offset.x) * resident.width * 0.43;
         const approach = { min: { x: frontX - 9, y: body.position.y - resident.height * 0.34 }, max: { x: frontX + 9, y: body.position.y + resident.height * 0.34 } };
-        const toyBlocks = this.island.props.some(prop => Math.abs((prop.depth || 0) - resident.depth) < 25 && Bounds.overlaps(approach, prop.body.bounds));
+        const toyBlocks = this.island.props.some(prop => prop.kind !== 'food' && Math.abs((prop.depth || 0) - resident.depth) < 25 && Bounds.overlaps(approach, prop.body.bounds));
         const blobbyBlocks = Math.abs(this.island.blob.depth - resident.depth) < 25 && this.island.blob.particles.some(particle => Bounds.overlaps(approach, particle.bounds));
         if (toyBlocks || blobbyBlocks) resident.detourUntil = time + 3200;
       }
@@ -586,10 +589,12 @@ class Wildlife {
         resident.hopAt = time;
       }
       Body.setVelocity(body, nextVelocity);
-      if (resident.species === 'rabbit' && moving && resident.grounded && !resident.held && time - resident.hopAt > 850 && Math.abs(offset.x) > 30) {
+      if (['rabbit', 'frog'].includes(resident.species) && moving && resident.grounded && !resident.held
+        && (resident.species !== 'frog' || !resident.recovery && !(resident.anticUntil > time))
+        && time - resident.hopAt > (resident.species === 'frog' ? 1100 : 850) && Math.abs(offset.x) > 30) {
         resident.hopPrepareUntil ??= time + 150;
         if (time >= resident.hopPrepareUntil || resident.recovery) {
-          Body.setVelocity(body, { x: body.velocity.x, y: -2.35 }); resident.hopAt = time; resident.hopPrepareUntil = null;
+          Body.setVelocity(body, { x: body.velocity.x, y: resident.species === 'frog' ? -3.8 : -2.35 }); resident.hopAt = time; resident.hopPrepareUntil = null;
         }
       } else resident.hopPrepareUntil = null;
       if (resident.immersion > 0.1 && !resident.recovery) {
@@ -648,6 +653,7 @@ class Wildlife {
       thought: this.island.time < resident.thoughtUntil ? resident.thought : '', target: { ...resident.target }, reactions: resident.reactions,
       food: resident.diet.food, foodRoutine: resident.diet.routine, meals: resident.meals, foodTarget: resident.foodId, foodPortion: resident.foodPortionId,
       feedingSince: resident.feedingSince, feedingPoint: resident.feedingPoint ? { ...resident.feedingPoint } : null, feedingPose: feedingPose(resident, this.island.time),
+      ...(resident.species === 'frog' ? { jumpPose: frogJumpPose(resident, this.island.time) } : {}),
       lastMeal: resident.lastMeal ? { ...resident.lastMeal } : null, mealHeartUntil: resident.mealHeartUntil, satisfiedUntil: resident.satisfiedUntil,
       traits: { ...resident.traits }, needs: { ...resident.needs }, avoidSpot: resident.avoidSpot ? { ...resident.avoidSpot } : null,
       gaze: resident.lookAt ? { ...resident.lookAt } : null, fidget: resident.fidgetUntil > this.island.time ? resident.fidget : null,

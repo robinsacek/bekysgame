@@ -77,6 +77,66 @@ test('Momo chews a hand-picked banana, rejects other food and shows a satisfied 
   island.dispose();
 });
 
+test('both little frogs share lizard flies, flick their tongues and consume only the offered swarm', () => {
+  for (const map of ['lagoon', 'pools', 'sunset']) {
+    for (const id of ['puddle', 'sprig']) {
+      const island = new IslandPhysics(3200, 900, map, true);
+      const foraging = island.wildlife.foraging;
+      const frog = island.wildlife.residents.find(resident => resident.id === id);
+      assert.equal(frog.species, 'frog');
+      assert.ok(frog.width <= 34 && frog.height <= 30, 'Frogs stay smaller than the lizards');
+      assert.deepEqual(frog.diet.foods, DIETS.lizard.foods);
+      assert.equal(foraging.accepts(frog, 'banana'), false);
+      assert.equal(foraging.accepts(frog, 'bait-fish'), false);
+      Body.setPosition(frog.body, { x: 280, y: island.layout.ground - frog.height * 0.41 });
+      frog.direction = 1;
+      const source = foraging.patches.find(patch => patch.food === 'insects');
+      const flies = foraging.harvest(source, true);
+      const mouth = foraging.mouthFor(frog);
+      flies.depth = 0; flies.depthTarget = 0;
+      Body.setPosition(flies.body, { x: mouth.x + 35, y: mouth.y - 8 });
+      const ball = island.props.find(prop => prop.kind === 'ball');
+      assert.equal(island.grab(61, flies.body.position)?.prop?.portionId, flies.portionId, `${map}/${id} must grab the flies`);
+      assert.equal(island.grab(62, ball.body.position)?.prop, ball);
+      const otherGrip = island.drags.get(62).constraint;
+      const tongues = [];
+      for (let frame = 0; frame < 100; frame += 1) {
+        island.time += 1000 / 60; foraging.tick(); foraging.act(frog);
+        tongues.push(feedingPose(frog, island.time).tongue);
+      }
+      assert.ok(Math.max(...tongues) > 0.8 && Math.min(...tongues) === 0, `${map}/${id} must flick and retract its tongue`);
+      assert.equal(frog.meals, 1);
+      assert.equal(frog.lastMeal.portionId, flies.portionId);
+      assert.equal(frog.lastMeal.assisted, true);
+      assert.equal(frog.needs.hunger, 0);
+      assert.equal(feedingPose(frog, island.time).heart, true);
+      assert.equal(foraging.live(flies), false);
+      assert.equal(foraging.consume(frog, flies), false);
+      assert.equal(island.drags.has(61), false);
+      assert.equal(island.drags.get(62).constraint, otherGrip);
+      assert.equal(Composite.allBodies(island.engine.world).includes(flies.body), false);
+      island.dispose();
+    }
+  }
+});
+
+test('little frogs approach released flies at their offered beach depth without detouring around food', () => {
+  const island = new IslandPhysics(3200, 900, 'sunset', true);
+  const frog = island.wildlife.residents.find(resident => resident.id === 'sprig');
+  const foraging = island.wildlife.foraging;
+  const flies = foraging.harvest(foraging.patches.find(patch => patch.food === 'insects'), true);
+  Body.setPosition(frog.body, { x: 280, y: island.layout.ground - frog.height * 0.41 });
+  Object.assign(frog, { depth: 25, depthTarget: 25, foodAt: 0, until: 0 });
+  Body.setPosition(flies.body, { x: 350, y: island.layout.ground - 14 });
+  flies.depth = 25; flies.depthTarget = 25;
+  for (let frame = 0; frame < 240; frame += 1) island.step();
+  assert.equal(frog.meals, 1);
+  assert.equal(frog.lastMeal.portionId, flies.portionId);
+  assert.equal(foraging.live(flies), false);
+  assert.equal(frog.detourUntil, 0, 'Non-colliding food must not trigger a depth detour');
+  island.dispose();
+});
+
 test('a calm held offer consumes exactly once, updates needs and preserves another independent grip', () => {
   const { island, foraging, resident, source, portion, tick } = offerFixture();
   const second = island.props.find(prop => prop.kind === 'ball');
@@ -171,7 +231,7 @@ test('food competition and repeated depletion remain bounded with fresh ownershi
   assert.equal(island.props.filter(prop => prop.kind === 'food').length, MAX_PORTIONS);
   island.time += 60001; foraging.tick();
   assert.equal(foraging.portions.size, 0);
-  assert.equal(island.wildlife.residents.length, 11);
+  assert.equal(island.wildlife.residents.length, 13);
   island.dispose();
 });
 
@@ -220,7 +280,7 @@ test('every species including sharks can approach its own food and complete a re
     assert.ok(resident.meals >= 1, `${species} must actually feed using its production routine`);
     assert.ok(patch.visits >= 1 && patch.readyAt > island.time, 'An eaten patch must briefly replenish instead of yielding food every frame');
     assert.ok(island.wildlife.encounterCounts['food-found'] > 0);
-    assert.equal(island.wildlife.residents.length, 11, 'Feeding must not consume named residents');
+    assert.equal(island.wildlife.residents.length, 13, 'Feeding must not consume named residents');
     island.dispose();
   }
 });
@@ -356,7 +416,7 @@ test('untouched maps sustain real autonomous meals, chewing and satisfaction for
     }
     assert.equal(foraging.patches.reduce((sum, source) => sum + source.visits, 0), consumed.size);
     assert.ok(foraging.patches.some(source => source.food === 'bait-fish' && source.visits > 1), 'Eaten bait replenishes and can be eaten in a fresh lifecycle');
-    assert.equal(island.wildlife.residents.length, 11);
+    assert.equal(island.wildlife.residents.length, 13);
     assert.equal(island.objectives.snapshot().completed, 0);
     assert.equal(island.drags.size, 0);
     island.dispose();

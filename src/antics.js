@@ -5,6 +5,7 @@ const MOMENTS = {
   bird: 'dropping', fish: 'bubble-ring', crab: 'claw-dance', tortoise: 'sneeze', jellyfish: 'hiccup',
   shark: 'yawn', octopus: 'ink-puff', lizard: 'tongue-flick', rabbit: 'binky', starfish: 'cartwheel', blob: 'blobby-hiccup',
   monkey: 'tail-curl',
+  frog: 'somersault',
 };
 const REPERTOIRE = {
   bird: ['dropping', 'wing-settle', 'beak-polish', 'landing-flare'],
@@ -18,12 +19,13 @@ const REPERTOIRE = {
   rabbit: ['binky', 'ear-flick', 'nose-twitch', 'sand-dig'],
   starfish: ['cartwheel', 'arm-wave', 'sand-star', 'slow-spin'],
   monkey: ['tail-curl', 'long-stretch', 'tail-wiggle', 'binky'],
+  frog: ['somersault', 'throat-puff', 'long-stretch', 'happy-hop'],
   blob: ['blobby-hiccup', 'wobble-settle', 'colour-shimmer', 'sneeze-jiggle', 'delighted-squish', 'bubble-blow'],
 };
 const SIGNATURES = { mango: 'sun-salute', fern: 'tail-surprise', clover: 'warning-thump', thistle: 'sideways-binky',
   aster: 'slow-cartwheel', pearl: 'upside-down', fin: 'perfect-ring', pip: 'broken-ring' };
 const FIDGETS = { bird: 'wing-settle', fish: 'fin-fan', crab: 'shell-polish', tortoise: 'sleepy-nod', jellyfish: 'bell-flare',
-  shark: 'tail-swish', octopus: 'arm-wave', lizard: 'tail-wiggle', rabbit: 'nose-twitch', starfish: 'arm-wave', monkey: 'tail-wiggle' };
+  shark: 'tail-swish', octopus: 'arm-wave', lizard: 'tail-wiggle', rabbit: 'nose-twitch', starfish: 'arm-wave', monkey: 'tail-wiggle', frog: 'throat-puff' };
 const SPINS = new Set(['cartwheel', 'slow-cartwheel', 'slow-spin', 'upside-down', 'tail-chase', 'arm-knot']);
 
 function comicPose(kind, progress, intensity = 1) {
@@ -93,6 +95,7 @@ class ComicMoments {
       const resident = pending.resident;
       const blocked = resident.id === 'blob' ? [...this.island.drags.values()].some(drag => drag.kind === 'blob')
         : this.wildlife.held(resident.body) || resident.recovery || resident.behaviorUntil > time
+          || resident.species === 'frog' && (!resident.grounded || resident.immersion > 0.05)
           || ['snacking', 'visiting', 'visiting-flight', 'foraging', 'feeding', 'returning', 'startled', 'fleeing'].includes(resident.state);
       if (blocked) {
         resident.anticUntil = time;
@@ -118,7 +121,9 @@ class ComicMoments {
       if (time < next) continue;
       const resident = this.wildlife.residents.find(item => item.id === id);
       const held = id === 'blob' ? [...this.island.drags.values()].some(drag => drag.kind === 'blob') : this.wildlife.held(resident.body);
-      if (held || resident && (resident.recovery || resident.behaviorUntil > time || ['snacking', 'visiting', 'visiting-flight', 'foraging', 'feeding', 'returning', 'startled', 'fleeing'].includes(resident.state))) {
+      if (held || resident && (resident.recovery || resident.behaviorUntil > time
+        || resident.species === 'frog' && (!resident.grounded || resident.immersion > 0.05)
+        || ['snacking', 'visiting', 'visiting-flight', 'foraging', 'feeding', 'returning', 'startled', 'fleeing'].includes(resident.state))) {
         this.nextAt.set(id, time + 4000);
         continue;
       }
@@ -209,6 +214,10 @@ class ComicMoments {
       Body.setVelocity(body, { x: resident.body.velocity.x * 0.5, y: 0.7 });
       this.droppings.push({ body, time });
       Composite.add(this.island.engine.world, body);
+    } else if (resident.species === 'frog' && ['somersault', 'happy-hop'].includes(kind) && resident.grounded) {
+      Body.setVelocity(resident.body, { x: resident.direction * 2.2, y: kind === 'somersault' ? -6.4 : -4.4 });
+      resident.hopAt = time; resident.hopPrepareUntil = null;
+      resident.flipAt = kind === 'somersault' ? time : null;
     } else if (['binky', 'sideways-binky'].includes(kind) && resident.grounded) Body.setVelocity(resident.body, { x: resident.direction * 1.4, y: -4.6 });
     else if (resident.id === 'blob' && kind === 'blobby-hiccup') {
       this.island.blob.hiccupUntil = time + 1300;

@@ -1,4 +1,4 @@
-import { applyCreaturePose, drawingSize, eyeGaze, feedingPose } from './creature-pose.js';
+import { applyCreaturePose, drawingSize, eyeGaze, feedingPose, frogJumpPose } from './creature-pose.js';
 import { comicPose } from './antics.js';
 
 const TAU = Math.PI * 2;
@@ -10,7 +10,7 @@ function polygon(context, points, color) {
 }
 
 export function drawLocalResident(art, context, resident, time) {
-  if (!['lizard', 'starfish', 'rabbit', 'monkey'].includes(resident.species)) return false;
+  if (!['lizard', 'starfish', 'rabbit', 'monkey', 'frog'].includes(resident.species)) return false;
   const { paint, mix, oval, colors } = art;
   const { paper, ink, green, yellow, pink, wood } = colors;
   const gaze = eyeGaze(resident);
@@ -29,6 +29,44 @@ export function drawLocalResident(art, context, resident, time) {
       for (const radius of [9, 15]) oval(context, Math.cos(angle) * radius, Math.sin(angle) * radius, 1.5, 1.5, paint(paper, 0.4));
     }
     for (const offset of [-4, 4]) { oval(context, offset, -3, 3, 3.5, paint(paper)); oval(context, offset + 0.5 + gaze.x * 0.5, -2.5 + gaze.y, 1.4, 2, paint(ink)); }
+  } else if (resident.species === 'frog') {
+    const skin = resident.id === 'sprig' ? mix(green, yellow, 0.36) : mix(green, colors.blue, 0.22);
+    const belly = mix(paper, yellow, 0.22);
+    const jump = frogJumpPose(resident, time);
+    const kick = jump.extension * 5 - jump.tuck * 3;
+    const puff = comic === 'throat-puff' ? 1 + Math.sin(time * 0.008) ** 2 * 0.4 : 1;
+    oval(context, -11, 7, 8, 5.5, paint(mix(skin, wood, 0.13)), -0.35);
+    oval(context, -14 - kick, 11 + kick * 0.35, 6, 2.5, paint(skin), -0.1);
+    oval(context, 8 + kick, 11 + kick * 0.3, 5.5, 2.5, paint(skin), 0.1);
+    oval(context, -1, 3, 14, 10, paint(skin));
+    oval(context, 3, 6, 9, 5.5 * puff, paint(belly));
+    oval(context, 6, -4, 13, 8.5, paint(skin));
+    for (const offset of [-1, 13]) {
+      oval(context, offset, -11, 6, 7, paint(skin));
+      oval(context, offset + 0.5, -11.5, 4.5, 5.4, paint(paper));
+      const blink = (time + resident.phase * 630) % 5200 > 5050;
+      oval(context, offset + 1 + gaze.x, -10.8 + gaze.y, 2.2, blink ? 0.55 : 3, paint(ink));
+      if (!blink) oval(context, offset + gaze.x + 0.2, -12 + gaze.y, 0.8, 1, paint(paper));
+    }
+    for (const [spotX, spotY] of [[-8, -1], [-3, -3], [-10, 3]]) oval(context, spotX, spotY, 1.4, 1, paint(mix(skin, wood, 0.38), 0.6));
+    context.strokeStyle = paint(mix(skin, wood, 0.18)); context.lineWidth = 2.2; context.lineCap = 'round';
+    for (const offset of [-1, 10]) {
+      context.beginPath(); context.moveTo(offset, 3); context.lineTo(offset - jump.tuck * 2, 10 - jump.tuck * 4); context.stroke();
+    }
+    for (const offset of [-4, 16]) oval(context, offset, 0.5, 2.8, 1.6, paint(pink, 0.32));
+    if (!resident.frown && !feeding.eating && !feeding.smile) {
+      context.strokeStyle = paint(ink, 0.8); context.lineWidth = 1.1;
+      context.beginPath(); context.moveTo(5, 0); context.quadraticCurveTo(11, 5, 17, -0.5); context.stroke();
+    }
+    if (feeding.tongue > 0 && resident.feedingPoint) {
+      const foodX = (resident.feedingPoint.x - resident.body.position.x) * resident.direction * 34 / resident.width;
+      const foodY = (resident.feedingPoint.y - resident.body.position.y) * 30 / resident.height;
+      const tipX = 11 + (foodX - 11) * feeding.tongue;
+      const tipY = foodY * feeding.tongue;
+      context.strokeStyle = paint(mix(pink, paper, 0.18)); context.lineWidth = 2.4;
+      context.beginPath(); context.moveTo(11, 0); context.quadraticCurveTo((11 + tipX) / 2, tipY - 3, tipX, tipY); context.stroke();
+      oval(context, tipX, tipY, 2.5, 1.6, paint(pink));
+    }
   } else if (resident.species === 'monkey') {
     const fur = mix(wood, ink, 0.12);
     const face = mix(paper, yellow, 0.28);
@@ -155,7 +193,7 @@ export function drawReaction(art, context, resident, time) {
   drawGagDetail(art, context, resident, time);
   const comic = resident.anticUntil > time ? resident.antic : null;
   const feeding = feedingPose(resident, time);
-  const face = { fish: [drawingSize(resident)[0] * 0.45, 2], jellyfish: [0, 4], shark: [39, 7], octopus: [0, 4], starfish: [0, 5], tortoise: [31, 5], crab: [15, 8], bird: [17, 0], lizard: [26, 2], rabbit: [23, 2], monkey: [15, -1] }[resident.species];
+  const face = { fish: [drawingSize(resident)[0] * 0.45, 2], jellyfish: [0, 4], shark: [39, 7], octopus: [0, 4], starfish: [0, 5], tortoise: [31, 5], crab: [15, 8], bird: [17, 0], lizard: [26, 2], rabbit: [23, 2], monkey: [15, -1], frog: [11, 0] }[resident.species];
   context.save(); applyCreaturePose(context, resident, time);
   if (resident.species === 'shark' && (resident.snapUntil > time || comic === 'yawn' || feeding.eating)) {
     const snapping = resident.snapUntil > time;
@@ -197,7 +235,7 @@ export function drawReaction(art, context, resident, time) {
     context.beginPath(); context.moveTo(face[0] - 4, face[1] + 2); context.quadraticCurveTo(face[0], face[1] - 4, face[0] + 4, face[1] + 2); context.stroke();
     context.beginPath(); context.moveTo(face[0] - 7, face[1] - 12); context.lineTo(face[0] - 1, face[1] - 15); context.moveTo(face[0] + 1, face[1] - 15); context.lineTo(face[0] + 7, face[1] - 12); context.stroke();
   } else if (feeding.eating && resident.species !== 'bird') {
-    const nibbling = ['rabbit', 'crab', 'fish', 'monkey'].includes(resident.species);
+    const nibbling = ['rabbit', 'crab', 'fish', 'monkey', 'frog'].includes(resident.species);
     const mouthWidth = resident.species === 'fish' ? 2.1 : resident.species === 'lizard' ? 3.8 : nibbling ? 2.8 : 3.5;
     const mouthHeight = 0.5 + feeding.open * (nibbling ? 2.6 : resident.species === 'jellyfish' ? 3.2 : 3.7);
     oval(context, face[0] + feeding.chew * (resident.species === 'rabbit' ? 0.55 : 0.15), face[1] + mouthHeight * 0.3,

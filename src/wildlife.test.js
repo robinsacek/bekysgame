@@ -8,6 +8,46 @@ function advance(island, frames) {
   assert.equal(island.snapshot().finite, true, 'All creature and physics positions must remain finite');
 }
 
+test('little frogs make springy ordinary hops with a crouch and no constant flipping', () => {
+  for (const id of ['puddle', 'sprig']) {
+    const island = new IslandPhysics(3200, 900, 'lagoon', true);
+    const frog = island.wildlife.residents.find(resident => resident.id === id);
+    Body.setPosition(frog.body, { x: 280, y: island.layout.ground - frog.height * 0.41 });
+    Object.assign(frog, { state: 'wandering', until: 10000, decideAt: 10000, foodAt: 10000,
+      target: { x: 500, y: island.layout.ground - frog.height * 0.41 } });
+    const hops = new Set();
+    let crouched = false;
+    let airborne = false;
+    for (let frame = 0; frame < 400; frame += 1) {
+      island.step();
+      if (frog.hopAt >= 0) hops.add(frog.hopAt);
+      const pose = island.wildlife.snapshot().find(resident => resident.id === id).jumpPose;
+      crouched ||= pose.crouch > 0.5;
+      airborne ||= frog.body.position.y < island.layout.ground - frog.height * 0.41 - 12;
+      assert.equal(pose.rotation, 0, 'Ordinary hops must not spin');
+    }
+    assert.ok(hops.size >= 2, `${id} must make repeated physical hops`);
+    assert.ok(crouched && airborne, 'A hop must anticipate and actually leave the ground');
+    assert.equal(island.snapshot().finite, true);
+    island.dispose();
+  }
+});
+
+test('a frog lands on toys only in its own beach-depth lane', () => {
+  const island = new IslandPhysics(3200, 900, 'lagoon', true);
+  const frog = island.wildlife.residents.find(resident => resident.id === 'sprig');
+  const crate = island.props.find(prop => prop.kind === 'crate');
+  Body.setPosition(frog.body, { x: crate.body.position.x, y: crate.body.bounds.min.y - frog.height * 0.41 });
+  Body.setVelocity(frog.body, { x: 0, y: 0 });
+  frog.depth = 55;
+  island.wildlife.updateMedium(frog);
+  assert.equal(frog.grounded, false, 'A background toy must not stop an airborne foreground somersault');
+  frog.depth = crate.depth;
+  island.wildlife.updateMedium(frog);
+  assert.equal(frog.grounded, true, 'A toy in the same depth lane remains a landing surface');
+  island.dispose();
+});
+
 test('all species act autonomously and remain in a bounded living world', () => {
   for (const map of ['lagoon', 'pools', 'sunset']) {
     const island = new IslandPhysics(3200, 900, map, true);
@@ -22,7 +62,7 @@ test('all species act autonomously and remain in a bounded living world', () => 
     }
     assert.equal(island.snapshot().finite, true);
     const after = island.wildlife.snapshot();
-    assert.deepEqual(after.map(resident => resident.species), ['fish', 'fish', 'crab', 'tortoise', 'bird', 'jellyfish', 'shark', 'octopus', island.map.resident.species, ...island.map.visitors.map(resident => resident.species), 'monkey']);
+    assert.deepEqual(after.map(resident => resident.species), ['fish', 'fish', 'crab', 'tortoise', 'bird', 'jellyfish', 'shark', 'octopus', island.map.resident.species, ...island.map.visitors.map(resident => resident.species), 'monkey', 'frog', 'frog']);
     for (const resident of after) {
       assert.ok(resident.transitions > 0, `${resident.name} must choose activities without player input`);
       assert.ok(resident.x > 0 && resident.x < 3200 && resident.y > 100 && resident.y < 900, 'Residents must stay inside the world');
@@ -86,7 +126,7 @@ test('the octopus investigates and gently moves a handled seabed object', () => 
   advance(island, 300);
   assert.ok(island.wildlife.encounters.some(event => event.kind === 'toy-interest' && event.first === octopus.id));
   assert.ok(Math.abs(shell.body.position.x - initialX) > 3, 'The octopus must interact physically with the shell');
-  assert.equal(island.wildlife.residents.length, 11, 'Play must not remove any residents');
+  assert.equal(island.wildlife.residents.length, 13, 'Play must not remove any residents');
   island.dispose();
 });
 

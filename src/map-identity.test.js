@@ -9,7 +9,7 @@ test('each map has its own habitat, cast variants, local pair and physical disco
   for (const map of ['lagoon', 'pools', 'sunset']) {
     const island = new IslandPhysics(3200, 900, map, true);
     const residents = island.wildlife.residents;
-    assert.equal(residents.length, 11);
+    assert.equal(residents.length, 13);
     const local = island.map.resident;
     assert.equal(residents.filter(resident => resident.species === local.species).length, 2, 'Each area needs a local pair with mutual interactions');
     cast.add(residents.map(resident => `${resident.name}:${resident.appearance}:${resident.width}`).join(','));

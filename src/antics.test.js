@@ -3,11 +3,63 @@ const assert = require('node:assert/strict');
 const { Body } = require('matter-js');
 const { IslandPhysics } = require('./physics.js');
 const { MOMENTS, REPERTOIRE, SIGNATURES, comicPose } = require('./antics.js');
+const { frogJumpPose } = require('./creature-pose.js');
+
+test('an occasional frog somersault makes a real jump, completes a turn and lands upright', () => {
+  const island = new IslandPhysics(3200, 900, 'lagoon', true);
+  const frog = island.wildlife.residents.find(resident => resident.id === 'puddle');
+  Body.setPosition(frog.body, { x: 300, y: island.layout.ground - frog.height * 0.41 });
+  Object.assign(frog, { state: 'resting', until: 10000, decideAt: 10000, foodAt: 10000 });
+  for (let frame = 0; frame < 40; frame += 1) island.step();
+  const origin = { ...frog.body.position };
+  island.wildlife.comedy.nextAt.set(frog.id, island.time);
+  let highest = origin.y;
+  let maximumRotation = 0;
+  let tucked = false;
+  let airborne = false;
+  let landed = false;
+  let previous = { ...origin };
+  for (let frame = 0; frame < 160; frame += 1) {
+    island.step();
+    const pose = frogJumpPose(frog, island.time);
+    highest = Math.min(highest, frog.body.position.y);
+    maximumRotation = Math.max(maximumRotation, pose.rotation);
+    tucked ||= pose.tuck > 0.8;
+    airborne ||= pose.airborne;
+    landed ||= airborne && frog.grounded && pose.rotation === 0;
+    assert.ok(Math.hypot(frog.body.position.x - previous.x, frog.body.position.y - previous.y) < 10, 'Somersaults must not teleport');
+    previous = { ...frog.body.position };
+  }
+  assert.ok(origin.y - highest > 38, 'The frog must actually leave the ground');
+  assert.ok(maximumRotation > Math.PI * 1.95, 'The airborne artwork must complete a whole turn');
+  assert.ok(tucked && airborne && landed, 'The frog curls up in the air and lands upright');
+  assert.equal(island.wildlife.comedy.counts.somersault, 1);
+  assert.ok(island.wildlife.comedy.nextAt.get(frog.id) > island.time + 30000, 'Flips stay occasional');
+  assert.equal(island.snapshot().finite, true);
+  island.dispose();
+});
+
+test('frog somersaults defer to held input, meals and airborne recovery', () => {
+  for (const priority of ['held', 'feeding', 'airborne']) {
+    const island = new IslandPhysics(3200, 900, 'lagoon', true);
+    const frog = island.wildlife.residents.find(resident => resident.id === 'puddle');
+    for (let frame = 0; frame < 40; frame += 1) island.step();
+    if (priority === 'held') assert.equal(island.grab(68, island.wildlife.position(frog))?.creature?.id, frog.id);
+    if (priority === 'feeding') frog.state = 'feeding';
+    if (priority === 'airborne') frog.grounded = false;
+    island.wildlife.comedy.nextAt.set(frog.id, island.time);
+    island.wildlife.comedy.tick();
+    assert.equal(island.wildlife.comedy.counts.somersault || 0, 0, priority);
+    assert.equal(frogJumpPose(frog, island.time).rotation, 0, priority);
+    assert.ok(island.wildlife.comedy.nextAt.get(frog.id) > island.time);
+    island.dispose();
+  }
+});
 
 test('each character gets a distinct rare gag on randomized multi-minute timers', () => {
   const island = new IslandPhysics(3200, 900, 'lagoon', true);
   const timers = [...island.wildlife.comedy.nextAt.values()];
-  assert.equal(timers.length, 12, 'Every resident and Blobby must have a timer');
+  assert.equal(timers.length, 14, 'Every resident and Blobby must have a timer');
   for (const timer of timers) assert.ok(timer >= 60000 && timer <= 420000, 'Each character must draw its own interval between one and seven active-play minutes');
   assert.equal(new Set(timers).size, timers.length, 'Timers must be staggered');
   assert.ok(Math.max(...timers) - Math.min(...timers) > 240000, 'The seeded schedule must exercise a wider range than the old two-to-four-minute window');

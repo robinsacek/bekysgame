@@ -2,7 +2,23 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Body } = require('matter-js');
 const { IslandPhysics } = require('./physics.js');
-const { drawingSize, applyCreaturePose, feedingPose } = require('./creature-pose.js');
+const { drawingSize, applyCreaturePose, feedingPose, frogJumpPose } = require('./creature-pose.js');
+
+test('frog jumping poses squash, stretch, turn and yield immediately to a grab or meal', () => {
+  const resident = { species: 'frog', body: { velocity: { x: 1, y: -3 } }, grounded: false, flipAt: 1000, state: 'wandering' };
+  const turning = frogJumpPose(resident, 1300);
+  assert.ok(Math.abs(turning.rotation - Math.PI) < 0.001);
+  assert.equal(turning.tuck, 1);
+  assert.equal(frogJumpPose({ ...resident, body: { velocity: { x: 1, y: 0 } } }, 1300).rotation, Math.PI, 'The turn must continue through the top of the jump');
+  assert.deepEqual(frogJumpPose(resident, 1300), turning, 'A frozen clock freezes the flip');
+  for (const priority of [{ held: true }, { state: 'feeding' }, { recovery: 'paddling' }, { grounded: true }, { frown: true }]) {
+    const pose = frogJumpPose({ ...resident, ...priority }, 1300);
+    assert.equal(pose.rotation, 0);
+    assert.equal(pose.tuck, 0);
+  }
+  assert.ok(frogJumpPose({ ...resident, flipAt: null }, 1300).extension > 0.7);
+  assert.ok(frogJumpPose({ ...resident, grounded: true, hopPrepareUntil: 1350 }, 1300).crouch > 0.6);
+});
 
 test('eating mouths cycle smoothly by species only during a live production bite', () => {
   for (const map of ['lagoon', 'pools', 'sunset']) {
