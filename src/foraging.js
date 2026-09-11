@@ -7,14 +7,15 @@ const DIETS = {
   rabbit: { food: 'grass', foods: ['grass', 'carrot'], routine: 'grazing' }, bird: { food: 'insects', foods: ['insects', 'shore-scraps', 'bait-fish'], routine: 'pecking' },
   lizard: { food: 'insects', foods: ['insects'], routine: 'insect-hunting' }, starfish: { food: 'algae', foods: ['algae', 'shell-bed'], routine: 'reef-grazing' },
   octopus: { food: 'shell-bed', foods: ['shell-bed'], routine: 'probing' }, shark: { food: 'bait-fish', foods: ['bait-fish'], routine: 'gulping' },
+  monkey: { food: 'banana', foods: ['banana'], routine: 'banana-munching' },
 };
 const FOODS = {
-  grass: { medium: 'land', radius: 12 }, carrot: { medium: 'land', radius: 12 },
+  grass: { medium: 'land', radius: 12 }, carrot: { medium: 'land', radius: 12 }, banana: { medium: 'land', radius: 16 },
   insects: { medium: 'land', radius: 14 }, 'shore-scraps': { medium: 'land', radius: 11 },
   plankton: { medium: 'water', radius: 16 }, algae: { medium: 'water', radius: 14 },
   'shell-bed': { medium: 'water', radius: 12 }, 'bait-fish': { medium: 'water', radius: 15 },
 };
-const LAND = new Set(['crab', 'tortoise', 'rabbit', 'lizard']);
+const LAND = new Set(['crab', 'tortoise', 'rabbit', 'lizard', 'monkey']);
 const PRIORITY = new Set(['startled', 'fleeing', 'returning', 'stalking', 'lunging', 'toy-play', 'inspecting', 'foraging', 'snacking', 'visiting', 'visiting-flight', 'curious', 'following', 'playing', 'companion']);
 const MAX_PORTIONS = 24;
 const MEAL_DWELL = 1500;
@@ -44,6 +45,10 @@ class Foraging {
       patch('algae', positionX - 16, this.island.floorAt(positionX - 16));
       patch('shell-bed', positionX + 20, this.island.floorAt(positionX + 20));
       if (index % 2 === 0) patch('bait-fish', positionX + 42, layout.water + 12);
+    }
+    for (const fruit of this.island.tree.fruits) {
+      patch('banana', fruit.body.position.x, fruit.body.position.y);
+      this.patches.at(-1).treeSlot = fruit.palmSlot;
     }
     for (const resident of wildlife.residents) Object.assign(resident, {
       diet: DIETS[resident.species], foodAt: 18000 + wildlife.random() * 14000, foodId: null, foodPortionId: null,
@@ -78,14 +83,18 @@ class Foraging {
       && this.island.floorAt(point.x) > this.island.layout.water + 60;
     if ((patch.depth || 0) > 18 || point.y > this.island.surfaceAt(point.x) + 38) return false;
     const target = this.targetFor(resident, patch);
-    const bounds = { min: { x: target.x - resident.width * 0.5, y: target.y - resident.height * 0.5 },
-      max: { x: target.x + resident.width * 0.5, y: target.y + resident.height * 0.5 } };
-    const blockers = [...this.island.props.filter(prop => prop !== patch && prop.kind !== 'food' && (prop.depth || 0) < 25).map(prop => prop.body), ...(this.island.blob.depth < 25 ? this.island.blob.particles : [])];
+    const halfWidth = resident.width * 0.41 + 4;
+    const halfHeight = resident.height * 0.41 + 4;
+    const bounds = { min: { x: target.x - halfWidth, y: target.y - halfHeight },
+      max: { x: target.x + halfWidth, y: target.y + halfHeight } };
+    const blockers = [...this.island.tree.body.parts.slice(1),
+      ...this.island.props.filter(prop => prop !== patch && prop.kind !== 'food' && (prop.depth || 0) < 25).map(prop => prop.body), ...(this.island.blob.depth < 25 ? this.island.blob.particles : [])];
     return !blockers.some(body => Bounds.overlaps(bounds, body.bounds));
   }
 
   pointFor(item) {
     if (item.body) return { ...item.body.position };
+    if (Number.isInteger(item.treeSlot)) return { ...this.island.tree.fruits[item.treeSlot].body.position };
     const lift = ['grass', 'carrot', 'shore-scraps', 'shell-bed'].includes(item.food) ? 12 : item.food === 'algae' ? 18 : 0;
     return { x: item.x, y: item.y - lift };
   }
@@ -103,15 +112,17 @@ class Foraging {
         - distance(point, { x: second.point.x, y: second.point.y + second.source.depth }))[0]?.source || null;
   }
 
-  harvest(source, playerHandled = false) {
+  harvest(source, playerHandled = false, kick = 0) {
     if (!this.patches.includes(source) || !this.available(source) || this.portions.size >= MAX_PORTIONS) return null;
     if (playerHandled && source.reservedBy) this.cancel(this.wildlife.residents.find(resident => resident.id === source.reservedBy));
     const point = this.pointFor(source);
     const portionId = `${source.id}:${++source.generation}`;
-    const portion = this.island.addProp('food', point.x, point.y, { radius: FOODS[source.food].radius, mass: 0.065,
+    const settings = { radius: FOODS[source.food].radius, mass: 0.065,
       density: ['algae', 'shell-bed'].includes(source.food) ? 1.35 : ['plankton', 'bait-fish'].includes(source.food) ? 1 : 0.72,
       foodType: source.food, sourceId: source.id, portionId, bornAt: this.island.time, reservedBy: source.reservedBy,
-      reservedUntil: source.reservedUntil, playerHandled, consumed: false, lostSince: null });
+      reservedUntil: source.reservedUntil, playerHandled, consumed: false, lostSince: null };
+    const portion = Number.isInteger(source.treeSlot) ? this.island.tree.pluck(source.treeSlot, kick) : this.island.addProp('food', point.x, point.y, settings);
+    Object.assign(portion, settings, { radius: portion.radius });
     portion.depth = source.depth; portion.depthTarget = source.depth;
     setBodyDepth(portion.body, portion.depth);
     portion.body.collisionFilter.group = this.wildlife.group;
@@ -202,7 +213,7 @@ class Foraging {
       || Math.hypot(portion.body.velocity.x - resident.body.velocity.x, portion.body.velocity.y - resident.body.velocity.y) > 1.35) return false;
     for (const drag of this.island.drags.values()) if (drag.body === portion.body
       && distance(drag.target, { x: point.x, y: point.y + portion.depth }) > 30) return false;
-    const blockers = [...this.island.terrain, ...this.island.rocks, this.island.tree.body, this.island.dock,
+    const blockers = [...this.island.terrain, ...this.island.rocks, ...(portion.depth < 18 ? [this.island.tree.body] : []), this.island.dock,
       ...this.island.props.filter(prop => prop !== portion && prop.kind !== 'food' && Math.abs((prop.depth || 0) - portion.depth) < 18).map(prop => prop.body),
       ...(Math.abs(this.island.blob.depth - portion.depth) < 18 ? this.island.blob.particles : [])].filter(Boolean);
     return Query.ray(blockers, mouth, point, 2).length === 0;
@@ -226,6 +237,9 @@ class Foraging {
 
   tick() {
     const { time } = this.island;
+    for (const source of this.patches) if (Number.isInteger(source.treeSlot) && this.available(source) && !this.island.tree.fruits[source.treeSlot].attached) {
+      this.island.tree.fruits[source.treeSlot] = this.island.tree.grow(source.treeSlot);
+    }
     for (const resident of this.wildlife.residents) if (resident.foodId) {
       const source = this.patches.find(item => item.id === resident.foodId);
       if (!this.eligible(resident) || !source || source.reservedBy !== resident.id || source.reservedUntil <= time || resident.forageUntil < time) {

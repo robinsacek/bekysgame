@@ -12,6 +12,18 @@ export function drawFoodPortion(art, context, portion, time) {
       context.bezierCurveTo(offset + sway, 1, offset - sway, -6, offset + sway * 0.4, -12 - blade % 2 * 5); context.stroke();
     }
     oval(context, 0, 10, 4.5, 2, paint(mix(colors.wood, colors.paper, 0.5)));
+  } else if (food === 'banana') {
+    const scale = (portion.radius || 16) / 16;
+    context.scale(scale, scale);
+    context.fillStyle = paint(colors.yellow); context.strokeStyle = paint(mix(colors.yellow, colors.wood, 0.4)); context.lineWidth = 1.2;
+    context.beginPath(); context.moveTo(-13, -11);
+    context.bezierCurveTo(-10, 4, 2, 9, 15, -4);
+    context.bezierCurveTo(12, 16, -9, 21, -16, -6);
+    context.closePath(); context.fill(); context.stroke();
+    context.strokeStyle = paint(mix(colors.yellow, colors.paper, 0.55)); context.lineWidth = 2.2;
+    context.beginPath(); context.moveTo(-12, -3); context.quadraticCurveTo(-4, 14, 10, 5); context.stroke();
+    context.strokeStyle = paint(colors.wood); context.lineWidth = 3;
+    context.beginPath(); context.moveTo(-14, -9); context.lineTo(-15, -13); context.moveTo(14, -3); context.lineTo(16, -5); context.stroke();
   } else if (food === 'carrot') {
     context.fillStyle = paint(mix(colors.yellow, colors.pink, 0.32)); context.beginPath(); context.moveTo(-6, -6);
     context.quadraticCurveTo(0, -12, 6, -6); context.quadraticCurveTo(5, 2, 0, 14); context.quadraticCurveTo(-5, 2, -6, -6); context.fill();
@@ -54,6 +66,7 @@ export function drawFoodPortion(art, context, portion, time) {
 }
 
 export function drawForagePatch(art, context, patch, time, wind = 0) {
+  if (Number.isInteger(patch.treeSlot)) return;
   const { paint, mix, oval, colors } = art;
   const available = patch.readyAt <= time && !patch.portionId;
   const growth = patch.portionId ? 0 : patch.depletedAt == null ? 1 : Math.max(0, Math.min(1, (time - patch.depletedAt) / (patch.readyAt - patch.depletedAt)));

@@ -7,7 +7,7 @@ A small translucent rainbow character named **Blobby**, exploring three living t
 - Each map is a bounded 3200 by 900 world, wider than a screen, with a real far shore, curved banks, uneven physical seabed, textured sand, reef gardens, and map-specific vegetation and lighting.
 - Blobby's resting silhouette matches the logo. Two or three independent grips stretch, squeeze, and reshape its moderately translucent body. Releasing restores elasticity; it cannot tear.
 - A broad foreground beach is usable space: Blobby, loose toys, and land residents can move into it, with depth-aware picking, collisions, ordering, and moving contact shadows. Airborne and floating bodies cast height- or water-relative shadows.
-- Ten residents per area: two fish, a crab, tortoise, shorebird, jellyfish, shark, and octopus, plus a local pair of iguanas, starfish, or rabbits. Map-specific bird, fish, and marine variants have different markings, proportions, names, and movement profiles.
+- Eleven residents per area: two fish, a crab, tortoise, shorebird, jellyfish, shark, and octopus, plus a local pair of iguanas, starfish, or rabbits and Momo the monkey. Map-specific bird, fish, and marine variants have different markings, proportions, names, and movement profiles.
 - Residents mix broad wandering with purposeful approaches to food, toys, habitats, neighbors, and Blobby. Longer journeys can finish without constant social interruption. Fish school; birds bank, flap, glide, and land; misplaced residents visibly react and return toward an appropriate habitat.
 - Every species eats renewable food that can also be harvested and carried by the player. Residents approach, nibble, chew, gulp, peck or filter with species-specific mouth motion, then show a larger heart and a satisfied smile before returning to other activities.
 - Residents play short games of tag, birds tease fish, and octopuses play peekaboo. A close jellyfish encounter can produce a brief comic tingle and retreat. Play respects grabs, recovery, and the picnic; there is no health loss, injury, or removal of residents.
@@ -15,7 +15,9 @@ A small translucent rainbow character named **Blobby**, exploring three living t
 - Each character draws a fresh comic-event baseline of 1-7 active-play minutes. Greetings, play, shared meals, escapes, and habitat returns raise a decaying probability bonus and advance that deadline. A completed gag resets the bonus and draws a new baseline. Per-character and global cooldowns prevent repeated-trigger spam; held, recovering, or objective-busy residents defer their event.
 - Gags include bubbles, hiccups, a claw dance, sneezing, yawning, an ink puff, a tongue flick, a rabbit binky, a starfish cartwheel, and an occasional physical bird dropping. Nearby residents can flee with an **Ewww!** reaction. Bubbles use crowd-aware placement and stay clear of the HUD.
 - Four optional journal objectives: reach the far-shore lookout with Blobby, deliver two different shells to Pebble, arrange a coconut picnic for Moss and Skipper, and earn curious responses from three reef species with player-guided underwater Blobby. Camera travel and untouched items do not earn progress.
-- Original tactile toys remain: shake the rooted palm or crash into it to release its three physical coconuts; move balls, rafts, bottles, crates, a hollow ring, shells, skipping stones, a suspended leaf swing, and Sunset Cove's hinged seesaw.
+- The far-left banana tree has three pickable, renewable bananas. Drag a banana directly from its stem or shake the rooted tree to drop fruit, then offer it to Momo. Loose coconuts still support the picnic objective.
+- Each map has a treasure chest. Tap it or bring Blobby alongside it at the same beach depth to open the lid and spill three coins, a gold bar, and two gems. Carry treasure to Blobby or move Blobby over it to collect it and trigger a delighted smile, gold-star eyes, and sparkles. Treasure is finite until that area is reset; wealth and opened chests survive map switching during the session.
+- Move balls, rafts, bottles, crates, a hollow ring, shells, skipping stones, a suspended leaf swing, and Sunset Cove's hinged seesaw.
 - Area state and journal progress last for the current session. Inactive maps freeze; switching back preserves identities and activity. Reset affects only the active area. Reload starts fresh.
 
 ## Three Habitats
@@ -30,11 +32,12 @@ All areas retain the four optional objectives and shared essentials, but differ 
 
 ## Feeding
 
+- Pick bananas from the far-left tree for Momo the monkey. Momo also approaches the grove and feeds itself when hungry.
 - Pull grass tufts for tortoises and rabbits, and carrots from Sunset Cove's dunes for Clover and Thistle.
 - Catch a small fly swarm for Mango, Fern, or Piper. Each swarm is one draggable food portion; the iguanas use a tongue-catching action.
 - Pluck underwater seaweed for fish and starfish. Fish also nibble collectible plankton clouds; jellyfish pulse and filter those clouds.
 - Gather strand scraps for Pebble or edible reef shellfish for octopuses and starfish. The journal's delivery shells are separate, inedible toys.
-- Catch unnamed bait fish for sharks and the Lagoon/Cove birds. Bait fish are renewable food, never one of the ten named residents.
+- Catch unnamed bait fish for sharks and the Lagoon/Cove birds. Bait fish are renewable food, never one of the eleven named residents.
 
 Hold compatible food calmly near an unheld resident's face at the same beach depth and in its suitable habitat, or release it nearby. A meal needs a continuous short bite, not a fast pass. Held animals, fright, recovery and objective visits retain priority. A completed meal updates hunger, produces one larger heart for about two active seconds, and a happier face for about five; distress overrides that expression immediately. Both player-assisted and autonomous meals use the same rules.
 
@@ -50,7 +53,7 @@ Sources visibly deplete and regrow, normally 16-32 active seconds after their po
 - Material impacts use mass- and speed-dependent resonance; rolling/scraping loops require real player-handled contacts and stop at rest. Splash bubbles, individual/state-shaped voices, quiet gait/feeding sounds, camera-distance mixing, short procedural map reverbs, and an underwater effects filter remain separate from music. Both controls start off, and pause/inactivity interrupts sound ownership correctly.
 - Blobby transmits a small pre-character scene capture inside its silhouette where the rendering budget allows, with a wet sheen and drips. Refraction is disabled on small/wide or reduced-motion views; all fallback paths retain the rainbow character. This is a stylized approximation, not a physical optical or fluid solver.
 
-The prioritized scope and verification record are in [DESIGN-V4.md](DESIGN-V4.md). Moving tides, additional species, engine replacement, and experimental soft-mesh self-collision remain deferred. The live canvas is capped at two million pixels; scenery caches stay below 4.5 million and refraction scratch below 512 by 512. Version 4.0.0 combines the weather, character and sound update with renewable feeding and natural eating expressions. Desktop/tablet frame-rate targets still require representative physical-device measurements; browser emulation is not a hardware certification.
+The prioritized scope and verification record are in [DESIGN-V4.md](DESIGN-V4.md). Moving tides, engine replacement, and experimental soft-mesh self-collision remain deferred. The live canvas is capped at two million pixels; scenery caches stay below 4.5 million and refraction scratch below 512 by 512. Version 4.0.0 combines the weather, character and sound update with renewable feeding and natural eating expressions. Desktop/tablet frame-rate targets still require representative physical-device measurements; browser emulation is not a hardware certification.
 
 ## Play
 
@@ -64,7 +67,7 @@ The complete game is also contained in [index.html](index.html), approximately 9
 - Drag empty scenery to pan, use the coast overview or journal location pins, or carry an object near the screen edge to travel. Find Blobby returns the camera.
 - Stir water for ripples. Throw a stone quickly at a shallow angle to skip it; a slow drop sinks. Put weight on one side of the seesaw or pull the swing.
 - The journal's four objectives are optional. Its location pins locate the lookout, shell corner, picnic clearing, and reef garden. Hold Blobby calmly near different underwater species to make friends.
-- Use the area selector to visit each map. The reset button restores only the current area, including its coconuts.
+- Use the area selector to visit each map. The reset button restores only the current area, including its bananas and unopened treasure chest.
 - The toolbar controls music, sound effects, pause, reset, and full screen where supported. Both audio controls start off and are unlocked by a user gesture.
 - Pausing, hiding the page, or leaving it suspends audio. Switching areas does not restart the music. Muting effects does not mute music.
 - Arrow keys move Blobby. F finds Blobby, Space pauses, R resets the current area, and M toggles effects.
@@ -73,7 +76,7 @@ Landscape and portrait layouts are supported. Rotation preserves the scene's pos
 
 ## Physics
 
-Matter.js drives fixed-step gravity, collisions, friction, inertia, elastic constraints, and touch springs. Blobby is a 24-point soft mesh with area-supporting pressure. Multiple grips soften the links; release smoothly restores spring strength. The palm is a compound collidable trunk with an anchored root and detachable fruit. The hollow ring, hinged seesaw, swing, banks, and uneven seabed have physical geometry.
+Matter.js drives fixed-step gravity, collisions, friction, inertia, elastic constraints, and touch springs. Blobby is a 24-point soft mesh with area-supporting pressure. Multiple grips soften the links; release smoothly restores spring strength. The banana tree is a compound collidable trunk with an anchored root and detachable fruit. The hollow ring, hinged seesaw, swing, banks, and uneven seabed have physical geometry.
 
 Buoyancy and drag depend on immersion. Misplaced residents react immediately and aim for the nearest suitable water or shore instead of a distant spawn. Fish flop, octopuses crawl, birds take off, and land residents paddle and climb reachable edges. Open nearby routes are checked for return within twelve active seconds. A visible rescue bubble remains a continuous-motion fallback after at least six seconds and measured lack of progress. Soft-bodied marine recovery includes a playful wash-back assist; it is not a claim that jellyfish can walk on land. The water has damped traveling waves. Wildlife uses seeded steering and prioritized states, not a network AI or a biological simulator.
 
@@ -116,6 +119,8 @@ Six additional living-world cases cover all three maps in Chromium and WebKit. P
 For a focused audio/input run in PowerShell, set `$env:BLOB_FEATURES='audio'` before `npm run test:browser`, then remove that selector with `Remove-Item Env:BLOB_FEATURES`. This runs all eight viewport/input cases with Chromium PCM spectrum, audible gameplay, mixing, and native-node cleanup checks, plus WebKit's disabled fallback. It does not replace the full coast/objective journey or long-running living-world release tests. Audio measurements are retained in the ignored `test-results/` directory.
 
 For focused feeding checks, set `$env:BLOB_FEATURES='feeding'`. Optional `$env:BLOB_CASES='desktop'` selects a viewport and `$env:BLOB_FEEDING_CASES='pools:pearl'` selects a map/resident; comma-separated values are supported. Run `npm run test:browser`, then remove those selectors before full regression checks. The normal browser matrix includes feeding automatically.
+
+For banana and treasure checks, set `$env:BLOB_FEATURES='discoveries'` and run `npm run test:browser`. This uses real mouse/touch input on all three maps to pick bananas, feed Momo, open chests, collect all six treasures, and verify reactions, grip cleanup, pause, map retention, and reset. Use `$env:BLOB_CASES='desktop,tablet-native-touch,phone,ipad-dark'` for the focused desktop/mobile matrix, then remove both selectors afterward.
 
 For stage visual inspection, set `$env:BLOB_FEATURES='visual'`, `$env:BLOB_STAGE='v4-final'`, and `$env:BLOB_CASES='desktop,phone'`, then run `npm run test:browser`. This captures every map at shore/reef and during its signature event, renders repertoire pose galleries, and checks parallax, refraction clipping, cache limits, fallback rendering, and frozen event state. Remove these three environment variables before a full regression run. Stage reports identify their scope and tested local HTML hash.
 

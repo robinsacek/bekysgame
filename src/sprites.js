@@ -2,6 +2,17 @@ import { drawMapObject } from './map-art.js';
 
 const TAU = Math.PI * 2;
 
+function star(context, positionX, positionY, radius, color, points = 4) {
+  context.fillStyle = color; context.beginPath();
+  for (let index = 0; index < points * 2; index += 1) {
+    const angle = index / (points * 2) * TAU - Math.PI / 2;
+    const length = radius * (index % 2 ? 0.38 : 1);
+    const point = [positionX + Math.cos(angle) * length, positionY + Math.sin(angle) * length];
+    if (index === 0) context.moveTo(...point); else context.lineTo(...point);
+  }
+  context.closePath(); context.fill();
+}
+
 export function drawProp(art, context, prop) {
   const { paint, mix, oval } = art;
   const { paper, ink, blue, pink, yellow, green, wood } = art.colors;
@@ -42,6 +53,62 @@ export function drawProp(art, context, prop) {
     context.strokeStyle = paint(mix(yellow, paper, 0.18), 0.55); context.lineWidth = 1;
     context.beginPath(); context.moveTo(-width * 0.42, 0); context.lineTo(width * 0.42, 0); context.stroke();
     for (let index = -3; index <= 3; index += 1) { context.beginPath(); context.moveTo(index * 10, 0); context.lineTo(index * 10 - 6, -height * 0.44); context.stroke(); }
+  } else if (kind === 'chest') {
+    const gold = mix(yellow, paper, 0.16);
+    const lid = prop.lid || 0;
+    const lidTop = -height * 0.5 - lid * 36;
+    const lidBottom = -height * 0.12 - lid * 8;
+    const timber = context.createLinearGradient(0, lidTop, 0, height / 2);
+    timber.addColorStop(0, paint(mix(wood, yellow, 0.3))); timber.addColorStop(1, paint(mix(wood, ink, 0.15)));
+    context.fillStyle = timber; context.beginPath(); context.moveTo(-width / 2, lidBottom);
+    context.lineTo(-width / 2, lidTop + 9); context.quadraticCurveTo(-width / 2, lidTop, -width / 2 + 9, lidTop);
+    context.lineTo(width / 2 - 9, lidTop); context.quadraticCurveTo(width / 2, lidTop, width / 2, lidTop + 9);
+    context.lineTo(width / 2, lidBottom); context.closePath(); context.fill();
+    context.strokeStyle = paint(mix(wood, ink, 0.3)); context.lineWidth = 1.5; context.stroke();
+    context.strokeStyle = paint(ink, 0.22); context.lineWidth = 1;
+    for (let plank = 1; plank < 4; plank += 1) {
+      const positionY = lidTop + (lidBottom - lidTop) * plank / 4;
+      context.beginPath(); context.moveTo(-width / 2 + 3, positionY); context.lineTo(width / 2 - 3, positionY); context.stroke();
+    }
+    for (const offset of [-0.32, 0.32]) {
+      context.fillStyle = paint(gold); context.fillRect(width * offset - 3, lidTop + 2, 6, lidBottom - lidTop - 1);
+    }
+    if (lid > 0.05) oval(context, 0, -4, width * 0.48, 5 + lid * 6, paint(mix(ink, wood, 0.22)));
+    context.fillStyle = timber; context.fillRect(-width / 2, -3, width, height / 2 + 3);
+    context.strokeStyle = paint(mix(wood, ink, 0.3)); context.lineWidth = 1.3; context.strokeRect(-width / 2, -3, width, height / 2 + 3);
+    context.strokeStyle = paint(ink, 0.18); context.lineWidth = 1;
+    context.beginPath(); context.moveTo(-width / 2, 11); context.lineTo(width / 2, 11); context.stroke();
+    for (const offset of [-0.32, 0.32]) {
+      context.fillStyle = paint(gold); context.fillRect(width * offset - 3, -3, 6, height / 2 + 3);
+      for (const positionY of [2, 18]) oval(context, width * offset, positionY, 1.3, 1.3, paint(mix(wood, ink, 0.2)));
+    }
+    context.strokeStyle = paint(gold); context.lineWidth = 2.5;
+    context.strokeRect(-width / 2 + 1, -3, width - 2, height / 2 + 2);
+    const latchY = lid > 0.2 ? lidBottom - 7 : -7;
+    context.fillStyle = paint(gold); context.beginPath(); context.roundRect(-7, latchY, 14, 15, 3); context.fill();
+    oval(context, 0, latchY + 6, 2, 2, paint(ink)); context.fillStyle = paint(ink); context.fillRect(-1, latchY + 6, 2, 4);
+    if (!lid) star(context, width * 0.3, -height * 0.47, 4 + Math.sin((art.animationTime || 0) * 0.004), paint(paper, 0.85));
+  } else if (kind === 'coin') {
+    oval(context, 0, 1, radius, radius, paint(mix(yellow, wood, 0.4)));
+    oval(context, 0, -1, radius, radius * 0.9, paint(yellow));
+    context.strokeStyle = paint(mix(yellow, paper, 0.5)); context.lineWidth = 1.5;
+    context.beginPath(); context.ellipse(0, -1, radius * 0.75, radius * 0.67, 0, 0, TAU); context.stroke();
+    star(context, 0, -1, radius * 0.5, paint(mix(yellow, wood, 0.36)), 5);
+    star(context, -radius * 0.55, -radius * 0.65, 3.5, paint(paper, 0.9));
+  } else if (kind === 'gold') {
+    context.fillStyle = paint(yellow); context.beginPath(); context.moveTo(-width * 0.4, -height / 2);
+    context.lineTo(width * 0.4, -height / 2); context.lineTo(width / 2, height / 2); context.lineTo(-width / 2, height / 2); context.closePath(); context.fill();
+    context.fillStyle = paint(mix(yellow, paper, 0.38)); context.fillRect(-width * 0.4, -height / 2, width * 0.8, height * 0.3);
+    context.strokeStyle = paint(mix(yellow, wood, 0.35)); context.lineWidth = 1.4; context.strokeRect(-width / 2 + 2, height * 0.12, width - 4, height * 0.35);
+    star(context, width * 0.25, -height * 0.45, 4, paint(paper, 0.95));
+  } else if (kind === 'gem') {
+    const color = prop.treasureId % 2 ? pink : mix(blue, green, 0.3);
+    context.fillStyle = paint(color); context.beginPath(); context.moveTo(0, -radius); context.lineTo(radius, -radius * 0.25);
+    context.lineTo(radius * 0.65, radius * 0.55); context.lineTo(0, radius); context.lineTo(-radius * 0.65, radius * 0.55); context.lineTo(-radius, -radius * 0.25); context.closePath(); context.fill();
+    context.fillStyle = paint(mix(color, paper, 0.55)); context.beginPath(); context.moveTo(0, -radius); context.lineTo(radius, -radius * 0.25); context.lineTo(0, 0); context.lineTo(-radius, -radius * 0.25); context.closePath(); context.fill();
+    context.fillStyle = paint(mix(color, ink, 0.18)); context.beginPath(); context.moveTo(0, 0); context.lineTo(radius, -radius * 0.25); context.lineTo(0, radius); context.closePath(); context.fill();
+    context.strokeStyle = paint(paper, 0.65); context.lineWidth = 1; context.beginPath(); context.moveTo(0, -radius); context.lineTo(0, 0); context.lineTo(-radius * 0.65, radius * 0.55); context.stroke();
+    star(context, -radius * 0.55, -radius * 0.55, 4, paint(paper, 0.95));
   } else if (kind === 'crate') {
     context.fillStyle = paint(mix(wood, yellow, 0.36)); context.fillRect(-width / 2, -height / 2, width, height);
     context.strokeStyle = paint(mix(wood, ink, 0.15)); context.lineWidth = 1.8;
@@ -176,6 +243,7 @@ export function drawBlob(art, context, island, time, pointer, delta) {
   context.save(); context.translate(center.x, center.y + 1); context.rotate(art.faceAngle);
   context.scale(clamp(bodyWidth / 86, 0.80, 1.6), clamp(bodyHeight / 66, 0.78, 1.12));
   const blink = time % 5900 > 5740;
+  const rich = island.blob.richUntil > time && !(island.blob.ewwUntil > time);
   const fingers = [...island.drags.values()].filter(drag => drag.kind === 'blob');
   for (let index = 0; index < 2; index += 1) {
     const eyeX = index === 0 ? -10.5 : 10.5;
@@ -197,11 +265,14 @@ export function drawBlob(art, context, island, time, pointer, delta) {
     } else {
       oval(context, eyeX, eyeY + 1, 9, 9.7, paint(ink, 0.10));
       oval(context, eyeX, eyeY, 8.5, 9.2, paint(paper, 0.97));
-      oval(context, eyeX + pupil.x, eyeY + pupil.y, 3.6, 4, paint(ink));
-      oval(context, eyeX + pupil.x - 1, eyeY + pupil.y - 1.5, 1.05, 1.05, paint(paper));
+      if (rich) star(context, eyeX + pupil.x * 0.4, eyeY, 6, paint(art.colors.yellow), 5);
+      else {
+        oval(context, eyeX + pupil.x, eyeY + pupil.y, 3.6, 4, paint(ink));
+        oval(context, eyeX + pupil.x - 1, eyeY + pupil.y - 1.5, 1.05, 1.05, paint(paper));
+      }
     }
   }
-  const excited = Math.hypot(core.velocity.x, core.velocity.y) > 5 || [...island.drags.values()].some(drag => drag.kind === 'blob');
+  const excited = rich || Math.hypot(core.velocity.x, core.velocity.y) > 5 || [...island.drags.values()].some(drag => drag.kind === 'blob');
   context.strokeStyle = paint(ink, 0.87); context.fillStyle = paint(ink, 0.91); context.lineWidth = 1.8; context.lineCap = 'round';
   context.beginPath(); context.moveTo(-6.5, 9); context.quadraticCurveTo(0, island.blob.ewwUntil > time ? 1 : excited ? 23 : 18, 7, 9);
   if (island.blob.ewwUntil > time) context.stroke();
@@ -212,6 +283,11 @@ export function drawBlob(art, context, island, time, pointer, delta) {
   } else context.stroke();
   oval(context, -20, 6.5, 3.7, 1.8, paint(pink, 0.16)); oval(context, 20, 6.5, 3.7, 1.8, paint(pink, 0.16));
   context.restore();
+  if (rich) for (let index = 0; index < 5; index += 1) {
+    const angle = -Math.PI + index / 4 * Math.PI;
+    star(context, center.x + Math.cos(angle) * (bodyWidth * 0.65 + 8), center.y + Math.sin(angle) * (bodyHeight * 0.7 + 12),
+      4 + Math.sin(time * 0.007 + index) * 1.5, paint(art.colors.yellow, 0.9));
+  }
 }
 
 export function drawLogo(art) {

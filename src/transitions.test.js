@@ -95,7 +95,7 @@ test('misplaced residents visibly recover to a natural habitat without teleporti
     }
     assert.equal(sawRecovery, true, `${species} must visibly react to the wrong environment`);
     assert.equal(returned, true, `${species} must find a natural habitat again`);
-    assert.equal(island.wildlife.residents.length, 10, 'No character may disappear during recovery');
+    assert.equal(island.wildlife.residents.length, 11, 'No character may disappear during recovery');
     island.dispose();
   }
 });

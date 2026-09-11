@@ -106,14 +106,18 @@ class FlightNavigation {
     }
     const open = point => validPoint(point) && !obstacles.some(bounds => inside(point, bounds));
     const arrivals = [{ ...destination }, { x: destination.x, y: destination.y - 20 }, { x: destination.x, y: destination.y - 34 },
-      { x: destination.x - 28, y: destination.y - 16 }, { x: destination.x + 28, y: destination.y - 16 }];
+      { x: destination.x - 28, y: destination.y - 16 }, { x: destination.x + 28, y: destination.y - 16 },
+      ...(resident.state === 'watching' ? [{ x: destination.x, y: destination.y - 55 },
+        { x: destination.x - 65, y: destination.y - 24 }, { x: destination.x + 65, y: destination.y - 24 }] : [])];
     const goal = arrivals.find(open) || { x: destination.x, y: Math.min(destination.y, this.island.layout.ground - 150) };
     let route = this.route;
     while (route?.points.length > 1 && distance(body.position, route.points[0]) < 8 && open(body.position)) route.points.shift();
     const needsRoute = !route || distance(route.destination, destination) > 70 || time > route.checkAt &&
       (!corridorClear(body.position, route.points[0] || goal, obstacles, validPoint) || time - route.progressAt > 2000 && distance(body.position, route.position) < 8);
     if (needsRoute) {
-      const cruise = Math.abs(goal.x - body.position.x) > 110 ? { x: goal.x, y: Math.min(goal.y, this.island.layout.ground - 150) } : goal;
+      const cruiseHeight = resident.state === 'watching' && body.position.x > this.island.layout.waterStart + halfWidth
+        ? this.island.layout.water - 70 : this.island.layout.ground - 150;
+      const cruise = Math.abs(goal.x - body.position.x) > 110 ? { x: goal.x, y: Math.min(goal.y, cruiseHeight) } : goal;
       const plan = barriers => {
         const outward = planFlightPath(body.position, cruise, barriers, validPoint);
         if (!outward.length || distance(cruise, goal) <= 1) return outward;

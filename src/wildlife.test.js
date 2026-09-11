@@ -22,7 +22,7 @@ test('all species act autonomously and remain in a bounded living world', () => 
     }
     assert.equal(island.snapshot().finite, true);
     const after = island.wildlife.snapshot();
-    assert.deepEqual(after.map(resident => resident.species), ['fish', 'fish', 'crab', 'tortoise', 'bird', 'jellyfish', 'shark', 'octopus', island.map.resident.species, ...island.map.visitors.map(resident => resident.species)]);
+    assert.deepEqual(after.map(resident => resident.species), ['fish', 'fish', 'crab', 'tortoise', 'bird', 'jellyfish', 'shark', 'octopus', island.map.resident.species, ...island.map.visitors.map(resident => resident.species), 'monkey']);
     for (const resident of after) {
       assert.ok(resident.transitions > 0, `${resident.name} must choose activities without player input`);
       assert.ok(resident.x > 0 && resident.x < 3200 && resident.y > 100 && resident.y < 900, 'Residents must stay inside the world');
@@ -86,7 +86,7 @@ test('the octopus investigates and gently moves a handled seabed object', () => 
   advance(island, 300);
   assert.ok(island.wildlife.encounters.some(event => event.kind === 'toy-interest' && event.first === octopus.id));
   assert.ok(Math.abs(shell.body.position.x - initialX) > 3, 'The octopus must interact physically with the shell');
-  assert.equal(island.wildlife.residents.length, 10, 'Play must not remove any residents');
+  assert.equal(island.wildlife.residents.length, 11, 'Play must not remove any residents');
   island.dispose();
 });
 

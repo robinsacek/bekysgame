@@ -7,7 +7,7 @@ const { MOMENTS, REPERTOIRE, SIGNATURES, comicPose } = require('./antics.js');
 test('each character gets a distinct rare gag on randomized multi-minute timers', () => {
   const island = new IslandPhysics(3200, 900, 'lagoon', true);
   const timers = [...island.wildlife.comedy.nextAt.values()];
-  assert.equal(timers.length, 11, 'Every resident and Blobby must have a timer');
+  assert.equal(timers.length, 12, 'Every resident and Blobby must have a timer');
   for (const timer of timers) assert.ok(timer >= 60000 && timer <= 420000, 'Each character must draw its own interval between one and seven active-play minutes');
   assert.equal(new Set(timers).size, timers.length, 'Timers must be staggered');
   assert.ok(Math.max(...timers) - Math.min(...timers) > 240000, 'The seeded schedule must exercise a wider range than the old two-to-four-minute window');

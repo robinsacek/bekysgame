@@ -4,13 +4,14 @@ class PalmTree {
   constructor(island) {
     this.island = island;
     this.scale = Math.max(0.69, Math.min(1, island.width / 1300));
-    this.base = { x: island.width * 0.105, y: island.layout.ground - 8 };
+    this.base = { x: island.expedition ? Math.max(100, island.width * 0.027) : island.width * 0.105, y: island.layout.ground - 8 };
     this.height = island.expedition ? Math.min(245, island.map.palmHeight) : island.map.palmHeight;
     this.lean = island.map.palmLean;
     this.lastDrop = -1000;
     this.impacts = 0;
     this.rustles = [];
     const group = Body.nextGroup(true);
+    this.group = group;
     const parts = [];
     for (let index = 0; index < 8; index += 1) {
       const lower = index / 8;
@@ -30,17 +31,7 @@ class PalmTree {
     this.root = Constraint.create({ pointA: { ...this.base }, bodyB: this.body, pointB: { ...this.rootOffset }, length: 0, stiffness: 0.98, damping: 0.20 });
     this.spring = Constraint.create({ pointA: { ...crown }, bodyB: this.body, pointB: { ...this.crownOffset }, length: 0, stiffness: 0.006, damping: 0.08 });
     Composite.add(island.engine.world, [this.body, this.root, this.spring]);
-    this.fruits = [-22, 2, 25].map((offset, slot) => {
-      const radius = 13 * this.scale;
-      const anchor = { x: crown.x + offset * this.scale, y: crown.y + 4 * this.scale };
-      const body = Bodies.circle(anchor.x, anchor.y + radius + (slot === 1 ? 18 : 9) * this.scale, radius,
-        { label: 'coconut', friction: 0.60, frictionAir: 0.01, restitution: 0.42, collisionFilter: { group } });
-      const mass = 0.32 * this.scale;
-      Body.setMass(body, mass);
-      const stem = Constraint.create({ bodyA: this.body, pointA: Vector.sub(anchor, this.body.position), bodyB: body, pointB: { x: 0, y: -radius * 0.65 }, stiffness: 0.55, damping: 0.1 });
-      Composite.add(island.engine.world, [body, stem]);
-      return { kind: 'coconut', body, stem, radius, mass, density: 0.73, submerged: 0, palmSlot: slot, attached: true };
-    });
+    this.fruits = [0, 1, 2].map(slot => this.grow(slot));
     Events.on(island.engine, 'collisionStart', event => {
       for (const pair of event.pairs) {
         const parentA = pair.bodyA.parent;
@@ -65,6 +56,19 @@ class PalmTree {
     return this.point({ x: this.lean, y: -this.height });
   }
 
+  grow(slot) {
+    const radius = 16 * this.scale;
+    const anchor = this.point({ x: this.lean + 22 + slot * 29, y: -this.height + 12 });
+    const body = Bodies.circle(anchor.x, anchor.y + radius + (slot === 1 ? 27 : 10) * this.scale, radius,
+      { label: 'food', friction: 0.60, frictionAir: 0.01, restitution: 0.18, collisionFilter: { group: this.group } });
+    const mass = 0.065;
+    Body.setMass(body, mass);
+    const stem = Constraint.create({ bodyA: this.body, pointA: Vector.rotate(Vector.sub(anchor, this.body.position), -this.body.angle), bodyB: body,
+      pointB: { x: 0, y: -radius * 0.65 }, stiffness: 0.55, damping: 0.1 });
+    Composite.add(this.island.engine.world, [body, stem]);
+    return { kind: 'food', foodType: 'banana', body, stem, radius, mass, density: 0.72, submerged: 0, depth: 0, depthTarget: 0, palmSlot: slot, attached: true };
+  }
+
   pick(point, padding = 0) {
     const crown = this.crown();
     if (Vector.magnitude(Vector.sub(point, crown)) < 100 * this.scale) return true;
@@ -72,7 +76,15 @@ class PalmTree {
     return this.body.parts.slice(1).some(part => point.x >= part.bounds.min.x - padding && point.x <= part.bounds.max.x + padding && point.y >= part.bounds.min.y - padding && point.y <= part.bounds.max.y + padding);
   }
 
-  detach(slot, kick = 0) {
+  detach(slot, kick = 0, playerHandled = false) {
+    const fruit = this.fruits[slot];
+    if (!fruit?.attached) return fruit;
+    const foraging = this.island.wildlife?.foraging;
+    const source = foraging?.patches.find(patch => patch.treeSlot === slot);
+    return source ? foraging.harvest(source, playerHandled, kick) : this.pluck(slot, kick);
+  }
+
+  pluck(slot, kick = 0) {
     const fruit = this.fruits[slot];
     if (!fruit?.attached) return fruit;
     fruit.attached = false;
@@ -89,7 +101,7 @@ class PalmTree {
     const fruit = this.fruits.find(item => item.attached);
     if (!fruit) return;
     const direction = this.body.angularVelocity < 0 ? -1 : 1;
-    this.detach(fruit.palmSlot, direction * Math.min(2.8, strength * 0.35));
+    if (!this.detach(fruit.palmSlot, direction * Math.min(2.8, strength * 0.35))) return;
     this.lastDrop = this.island.time;
     this.rustles.push({ ...this.crown(), time: this.island.time, strength });
     this.rustles = this.rustles.slice(-8);
@@ -102,7 +114,7 @@ class PalmTree {
   }
 
   snapshot() {
-    return { base: this.point({ x: 0, y: 0 }), crown: this.crown(), hitTarget: this.point({ x: this.lean * Math.pow(0.55, 1.3), y: -this.height * 0.55 }),
+    return { kind: 'banana', base: this.point({ x: 0, y: 0 }), crown: this.crown(), hitTarget: this.point({ x: this.lean * Math.pow(0.55, 1.3), y: -this.height * 0.55 }),
       angle: this.body.angle, attached: this.fruits.filter(fruit => fruit.attached).length, dropped: this.fruits.filter(fruit => !fruit.attached).length, impacts: this.impacts,
       fruits: this.fruits.map(fruit => ({ slot: fruit.palmSlot, attached: fruit.attached, x: fruit.body.position.x, y: fruit.body.position.y })) };
   }

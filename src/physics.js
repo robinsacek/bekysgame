@@ -8,6 +8,7 @@ const { blobbyOutline } = require('./blobby-shape.js');
 const { setBodyDepth, advanceDepth } = require('./depth-space.js');
 const { propSound } = require('./sound-context.js');
 const { IslandEnvironment } = require('./environment.js');
+const { TreasureChest } = require('./treasure.js');
 
 const { Engine, Bodies, Body, Composite, Constraint, Vector, Vertices, Events } = Matter;
 const STEP = 1000 / 60;
@@ -69,6 +70,7 @@ class IslandPhysics {
       for (const fruit of this.tree.fruits) setBodyDepth(fruit.body, 0);
       buildCoast(this); this.wildlife = new Wildlife(this); this.objectives = new CoastObjectives(this);
     }
+    this.treasure = new TreasureChest(this);
     this.environment = new IslandEnvironment(this);
     this.initialPropCount = this.props.length;
     Events.on(this.engine, 'collisionStart', event => {
@@ -341,6 +343,8 @@ class IslandPhysics {
     if (exactBlob) return exactBlob;
     if (foreground) return { body: foreground.body, kind: 'creature', creature: foreground };
     if (exactProp) return exactProp;
+    const fruit = this.tree.fruits.find(item => item.attached && Vector.magnitude(Vector.sub(point, item.body.position)) <= item.radius + padding);
+    if (fruit) return { body: fruit.body, kind: 'food', prop: fruit };
     if (this.tree.pick(point, 0)) return { body: this.tree.body, kind: 'tree' };
     if (nearestParticle && skinDistance <= this.blob.particleRadius + padding) return { body: nearestParticle, kind: 'blob' };
     const paddedProp = pickProps(padding);
@@ -361,6 +365,8 @@ class IslandPhysics {
     }
     picked ||= this.pick(point, padding);
     if (!picked) return null;
+    if (picked.kind === 'chest') this.treasure.open();
+    if (picked.prop?.attached && !this.tree.detach(picked.prop.palmSlot, 0, true)) return null;
     if (picked.creature) { picked.creature.held = true; this.wildlife.foraging.cancel(picked.creature); }
     if (picked.kind === 'blob') this.blobHandled = true;
     const prop = this.props.find(item => item.body === picked.body);
@@ -376,7 +382,7 @@ class IslandPhysics {
 
   move(pointerId, point) {
     const drag = this.drags.get(pointerId);
-    const landResident = drag?.creature && ['crab', 'tortoise', 'lizard', 'rabbit'].includes(drag.creature.species);
+    const landResident = drag?.creature && ['crab', 'tortoise', 'lizard', 'rabbit', 'monkey'].includes(drag.creature.species);
     const looseProp = drag?.prop && !drag.prop.anchor && !drag.prop.ropes;
     const blob = drag?.kind === 'blob' && [...this.drags.values()].filter(item => item.kind === 'blob').length === 1;
     if (this.expedition && (landResident || looseProp || blob)) {
@@ -395,8 +401,8 @@ class IslandPhysics {
     this.drags.delete(pointerId);
     if (drag.creature) drag.creature.held = [...this.drags.values()].some(item => item.body === drag.body);
     if (drag.prop?.kind === 'food') {
-      this.wildlife.foraging.cancelBite(drag.prop);
-      if (cancelled) this.wildlife.foraging.retire(drag.prop);
+      this.wildlife?.foraging.cancelBite(drag.prop);
+      if (cancelled) this.wildlife?.foraging.retire(drag.prop);
     }
   }
 
@@ -460,6 +466,7 @@ class IslandPhysics {
     Engine.update(this.engine, STEP);
     this.dampContacts();
     this.wildlife?.afterStep();
+    this.treasure.step();
     this.objectives?.step();
     for (const body of [...this.blob.particles, ...this.props.map(prop => prop.body)]) {
       const speed = Vector.magnitude(body.velocity);
@@ -525,6 +532,7 @@ class IslandPhysics {
       props: this.props.map(prop => ({ id: prop.body.id, kind: prop.kind, x: prop.body.position.x, y: prop.body.position.y + (prop.depth || 0), physicalY: prop.body.position.y, depth: prop.depth || 0, angle: prop.body.angle, radius: prop.radius, width: prop.width, height: prop.height, submerged: prop.submerged, palmSlot: prop.palmSlot, expeditionId: prop.expeditionId, playerHandled: Boolean(prop.playerHandled),
         ...(prop.kind === 'food' ? { foodType: prop.foodType, sourceId: prop.sourceId, portionId: prop.portionId, reservedBy: prop.reservedBy, reservedUntil: prop.reservedUntil } : {}) })),
       tree: this.tree.snapshot(),
+      treasure: this.treasure.snapshot(),
       creatures: this.wildlife?.snapshot(), encounters: this.wildlife?.encounters, encounterCounts: this.wildlife?.encounterCounts,
       objectives: this.objectives?.snapshot(),
       comedy: this.wildlife?.comedy.snapshot(),

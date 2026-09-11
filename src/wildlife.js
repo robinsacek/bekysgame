@@ -10,7 +10,7 @@ const { feedingPose } = require('./creature-pose.js');
 const clamp = (value, lower, upper) => Math.max(lower, Math.min(upper, value));
 const distance = (first, second) => Math.hypot(first.x - second.x, first.y - second.y);
 const SWIMMERS = new Set(['fish', 'jellyfish', 'shark', 'octopus', 'starfish']);
-const LAND_RESIDENTS = new Set(['crab', 'tortoise', 'lizard', 'rabbit']);
+const LAND_RESIDENTS = new Set(['crab', 'tortoise', 'lizard', 'rabbit', 'monkey']);
 
 class Wildlife {
   constructor(island) {
@@ -23,13 +23,14 @@ class Wildlife {
     const { layout, landmarks } = island;
     this.water = { minX: layout.toe + 35, maxX: layout.farToe - 35, minY: layout.water + 30, maxY: layout.bottom - 26 };
     this.strand = { minX: 95, maxX: layout.shore - 40, minY: layout.ground - 55, maxY: layout.ground };
+    this.perch = { x: island.width * 0.105 + island.tree.lean * island.tree.scale + 20, y: layout.ground - 8 - island.tree.height * island.tree.scale - 24 };
     this.group = Body.nextGroup(true);
     this.residents = [
       this.create('fin', 'Fin', 'fish', landmarks.reef.x - 70, layout.water + 77, 30, 18, 1.9),
       this.create('pip', 'Pip', 'fish', landmarks.reef.x + 30, layout.water + 101, 24, 15, 1.7),
       this.create('pebble', 'Pebble', 'crab', landmarks.nook.x - 110, layout.ground - 13, 28, 20, 1.0),
       this.create('moss', 'Moss', 'tortoise', landmarks.picnic.x + 115, layout.ground - 24, 64, 43, 0.62),
-      this.create('skipper', 'Skipper', 'bird', island.tree.crown().x + 15, island.tree.crown().y - 29, 40, 30, 3.6),
+      this.create('skipper', 'Skipper', 'bird', this.perch.x - 5, this.perch.y - 5, 40, 30, 3.6),
       this.create('lumi', 'Lumi', 'jellyfish', landmarks.reef.x - 175, layout.water + 67, 40, 54, 0.65),
       this.create('drift', 'Drift', 'shark', landmarks.reef.x + 155, layout.water + 105, 148, 58, 1.85),
       this.create('ollie', 'Ollie', 'octopus', landmarks.reef.x + 68, island.floorAt(landmarks.reef.x + 68) - 33, 66, 56, 0.92),
@@ -43,6 +44,7 @@ class Wildlife {
       resident.appearance = visitor.appearance;
       this.residents.push(resident);
     }
+    this.residents.push(this.create('momo', 'Momo', 'monkey', island.tree.base.x + 120, layout.ground - 24, 52, 56, 1.25));
     this.interactions = new LivingInteractions(this);
     this.comedy = new ComicMoments(this);
     this.foraging = new Foraging(this);
@@ -354,12 +356,11 @@ class Wildlife {
       }
       return;
     }
-    if (resident.until > time && (resident.state === 'watching' || resident.state === 'perching' && distance(resident.body.position, resident.target) < 35)) return;
+    if (resident.until > time && ['watching', 'perching'].includes(resident.state)) return;
     if (this.respondToBlob(resident)) return;
     if (resident.until > time) return;
     if (resident.state === 'watching') {
-      const crown = this.island.tree.crown();
-      const target = { x: crown.x + 20, y: crown.y - 24 };
+      const target = { ...this.perch };
       this.change(resident, 'perching', target, Math.max(2600, distance(resident.body.position, target) / resident.speed * 20 + 1700), 'rest');
     } else {
       const fish = this.residents[this.random() > 0.5 ? 0 : 1];
@@ -446,7 +447,7 @@ class Wildlife {
         resident.exitDock = false; resident.dockClimbed = false; resident.recoverySample = null; resident.recoveryStalled = false;
       } else {
         if (resident.outsideSince === null) resident.outsideSince = time;
-        const poses = { fish: 'flopping', jellyfish: 'washed-back', shark: 'wriggling', octopus: 'crawling-back', starfish: 'curling', tortoise: 'paddling', crab: 'paddling', bird: 'taking-off', lizard: 'paddling', rabbit: 'doggy-paddle' };
+        const poses = { fish: 'flopping', jellyfish: 'washed-back', shark: 'wriggling', octopus: 'crawling-back', starfish: 'curling', tortoise: 'paddling', crab: 'paddling', bird: 'taking-off', lizard: 'paddling', rabbit: 'doggy-paddle', monkey: 'paddling' };
         resident.recovery = poses[resident.species];
         if (!resident.recoverySample || time - resident.recoverySample.time > 1400) {
           resident.recoveryStalled = resident.recoverySample ? distance(body.position, resident.recoverySample.point) < 12 : false;
@@ -531,8 +532,7 @@ class Wildlife {
         if (fish) target = { x: fish.body.position.x + 24, y: this.island.layout.water - this.island.map.birdWatchHeight };
       }
       if (resident.state === 'perching' && distance(body.position, target) < 80) {
-        const crown = this.island.tree.crown();
-        target = { x: crown.x + 20, y: crown.y - 24 };
+        target = { ...this.perch };
       }
       if (aquatic && resident.immersion > 0.1) {
         const ahead = body.position.x + Math.sign(target.x - body.position.x) * Math.max(28, resident.width * 1.3);

@@ -174,12 +174,15 @@ async function exerciseIslands(page, config) {
 
   await page.locator('[data-map="pools"]').click();
   await page.waitForFunction(() => window.__blobIsland.snapshot().map === 'pools' && window.__blobIsland.snapshot().time > 1100);
+  const overview = await page.locator('#coast-overview').boundingBox();
+  await page.locator('#coast-overview').click({ position: { x: 1, y: overview.height / 2 } });
+  await frames(page, 3);
   const pools = await snapshot(page);
   assert.ok(pools.props.some(prop => prop.kind === 'shell'), 'Tide Pools must have sinking shells');
   await page.screenshot({ path: path.join(output, `${config.name}-pools.png`) });
   const crown = screenPoint(pools, config.viewport, pools.tree.hitTarget);
   await pointerEvent(page, 'pointerdown', 31, crown);
-  assert.equal((await snapshot(page)).drags, 1, 'The visible palm must accept a touch');
+  assert.equal((await snapshot(page)).drags, 1, 'The visible banana tree must accept a touch');
   const shake = { x: crown.x + 150 * scale, y: crown.y + 35 * scale };
   await pointerEvent(page, 'pointermove', 31, shake);
   const reaction = await page.waitForFunction(() => {
@@ -189,8 +192,8 @@ async function exerciseIslands(page, config) {
   const shaken = await reaction.jsonValue();
   await reaction.dispose();
   await pointerEvent(page, 'pointerup', 31, shake);
-  assert.ok(Math.abs(shaken.tree.angle) > 0.035, 'The palm must visibly react');
-  assert.equal(shaken.props.length, shaken.initialProps + shaken.tree.dropped, 'Fallen coconuts must be playable objects');
+  assert.ok(Math.abs(shaken.tree.angle) > 0.035, 'The banana tree must visibly react');
+  assert.equal(shaken.props.length, shaken.initialProps + shaken.tree.dropped, 'Fallen bananas must be playable objects');
   await page.screenshot({ path: path.join(output, `${config.name}-palm.png`) });
   await page.locator('#pause').click();
   const frozen = await snapshot(page);
@@ -415,7 +418,7 @@ async function exerciseRhythms(page, config) {
     assert.equal(active.environment.event?.kind, kind, `${mapId}: the signature must arrive on the unmodified simulation clock`);
     assert.equal(active.environment.eventCounts[kind], 1);
     assert.equal(active.finite, true);
-    assert.equal(active.creatures.length, 10);
+    assert.equal(active.creatures.length, 11);
     assert.ok(active.objectives.entries.every(entry => !entry.complete && entry.progress === 0), 'Environmental rhythms must not earn journal progress');
     await page.mouse.move(5, config.viewport.height - 8);
     await page.screenshot({ path: path.join(output, `${stage}-${config.name}-${mapId}-event.png`) });
@@ -549,14 +552,14 @@ async function run() {
           let visualResult;
           let feedingResult;
           if (features === 'visual') visualResult = await exerciseVisual(page, config);
-          else if (features === 'feeding') feedingResult = await exerciseFeeding(page, config, output);
+          else if (['feeding', 'discoveries'].includes(features)) feedingResult = await exerciseFeeding(page, config, output);
           else if (process.env.BLOB_FEATURES !== 'coast') {
             await exercise(page, context, config);
             if (process.env.BLOB_FEATURES !== 'audio') await exerciseIslands(page, config);
             audioResult = await exerciseAudio(page, config, output);
           }
           if (features === 'all') feedingResult = await exerciseFeeding(page, config, output);
-          if (!['audio', 'visual', 'feeding'].includes(features)) await exerciseCoast(page, config, output);
+          if (!['audio', 'visual', 'feeding', 'discoveries'].includes(features)) await exerciseCoast(page, config, output);
           const animation = await page.evaluate(async () => {
             const canvas = document.getElementById('world');
             const context = canvas.getContext('2d');

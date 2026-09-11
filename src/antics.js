@@ -4,6 +4,7 @@ const { residentSound } = require('./sound-context.js');
 const MOMENTS = {
   bird: 'dropping', fish: 'bubble-ring', crab: 'claw-dance', tortoise: 'sneeze', jellyfish: 'hiccup',
   shark: 'yawn', octopus: 'ink-puff', lizard: 'tongue-flick', rabbit: 'binky', starfish: 'cartwheel', blob: 'blobby-hiccup',
+  monkey: 'tail-curl',
 };
 const REPERTOIRE = {
   bird: ['dropping', 'wing-settle', 'beak-polish', 'landing-flare'],
@@ -16,12 +17,13 @@ const REPERTOIRE = {
   lizard: ['tongue-flick', 'throat-fan', 'tail-chase', 'sun-stretch'],
   rabbit: ['binky', 'ear-flick', 'nose-twitch', 'sand-dig'],
   starfish: ['cartwheel', 'arm-wave', 'sand-star', 'slow-spin'],
+  monkey: ['tail-curl', 'long-stretch', 'tail-wiggle', 'binky'],
   blob: ['blobby-hiccup', 'wobble-settle', 'colour-shimmer', 'sneeze-jiggle', 'delighted-squish', 'bubble-blow'],
 };
 const SIGNATURES = { mango: 'sun-salute', fern: 'tail-surprise', clover: 'warning-thump', thistle: 'sideways-binky',
   aster: 'slow-cartwheel', pearl: 'upside-down', fin: 'perfect-ring', pip: 'broken-ring' };
 const FIDGETS = { bird: 'wing-settle', fish: 'fin-fan', crab: 'shell-polish', tortoise: 'sleepy-nod', jellyfish: 'bell-flare',
-  shark: 'tail-swish', octopus: 'arm-wave', lizard: 'tail-wiggle', rabbit: 'nose-twitch', starfish: 'arm-wave' };
+  shark: 'tail-swish', octopus: 'arm-wave', lizard: 'tail-wiggle', rabbit: 'nose-twitch', starfish: 'arm-wave', monkey: 'tail-wiggle' };
 const SPINS = new Set(['cartwheel', 'slow-cartwheel', 'slow-spin', 'upside-down', 'tail-chase', 'arm-knot']);
 
 function comicPose(kind, progress, intensity = 1) {

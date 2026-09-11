@@ -363,6 +363,7 @@ export class IslandAudio {
       'voice-bird': [2200, 3500, 0.17, 'sine'], 'voice-crab': [1350, 900, 0.06, 'triangle'],
       'voice-fish': [510, 940, 0.11, 'sine'], 'voice-jellyfish': [1240, 1580, 0.33, 'sine'],
       'voice-octopus': [390, 780, 0.14, 'sine'],
+      'voice-monkey': [620, 980, 0.18, 'sine'],
       'voice-lizard': [1800, 2600, 0.08, 'triangle'], 'voice-rabbit': [850, 1160, 0.12, 'sine'], 'voice-starfish': [1460, 1760, 0.24, 'sine'],
     };
     const [start, end, duration, type] = palette[kind] || palette.grab;

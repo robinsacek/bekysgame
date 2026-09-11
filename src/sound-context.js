@@ -2,6 +2,7 @@ const PROP_SOUNDS = {
   crate: 'wood', raft: 'wood', log: 'wood', driftwood: 'wood', coconut: 'wood', seesaw: 'wood', buoy: 'wood',
   bottle: 'glass', shell: 'shell', conch: 'shell', stone: 'shell', pumice: 'shell',
   seedpod: 'rustle', swing: 'rustle', tree: 'rustle', bell: 'chime', ball: 'bounce', jelly: 'bounce',
+  chest: 'wood', coin: 'chime', gold: 'chime', gem: 'glass',
 };
 
 function propSound(kind, body, behavior = 'grab', speed = 2) {

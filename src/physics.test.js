@@ -157,7 +157,7 @@ test('touching and dragging the palm sways it and can shake coconuts loose', () 
   island.release(31);
   advance(island, 360);
   assert.ok(Math.abs(island.tree.body.angle) < 0.12, 'The rooted palm must spring back upright');
-  assert.ok(island.props.length <= island.map.toys.length + 3, 'The finite canopy must bound the coconut population');
+  assert.ok(island.props.length <= island.initialPropCount + 3, 'The finite canopy must bound the banana population');
   island.dispose();
 });
 

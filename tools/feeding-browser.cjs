@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const readState = page => page.evaluate(() => window.__blobIsland.snapshot());
-const LAND = new Set(['crab', 'tortoise', 'lizard', 'rabbit']);
+const LAND = new Set(['crab', 'tortoise', 'lizard', 'rabbit', 'monkey']);
 
 async function screenPoint(page, point) {
   const state = await readState(page);
@@ -89,7 +89,7 @@ async function mealCase(page, input, config, output, request) {
     .sort((first, second) => Math.abs(first.x - recipient.x) - Math.abs(second.x - recipient.x));
   assert.ok(sources.length, `${request.map}/${request.id} needs a visible source for ${request.food}`);
   const source = sources[0];
-  const destination = { x: source.x - Math.max(70, recipient.width * 0.55),
+  const destination = { x: source.x + (request.food === 'banana' ? 85 : -Math.max(70, recipient.width * 0.55)),
     y: LAND.has(recipient.species) ? state.ground - recipient.height * 0.41 + source.depth
       : recipient.species === 'bird' ? state.water - 75 : ['starfish', 'octopus'].includes(recipient.species) ? source.y - recipient.height * 0.5 - 10
         : request.food === 'algae' ? source.y - 90 : Math.max(state.water + recipient.height * 0.65 + 28, source.y) };
@@ -157,7 +157,7 @@ async function mealCase(page, input, config, output, request) {
   assert.equal(recipient.meals, previousMeals + 1);
   assert.equal(recipient.lastMeal.assisted, true);
   assert.ok(recipient.needs.hunger < 0.03);
-  assert.equal(completed.creatures.length, 10);
+  assert.equal(completed.creatures.length, 11);
   assert.equal(completed.props.some(prop => prop.portionId === portionId), false);
   assert.equal(completed.grips.some(grip => grip.bodyId === portion.id), false);
   if (extraId) assert.ok(completed.grips.some(grip => grip.bodyId === extraId), 'Consuming one native-held portion must preserve the other grip');
@@ -204,6 +204,78 @@ async function mealCase(page, input, config, output, request) {
   return report;
 }
 
+async function treasureCase(page, input, config, output, map) {
+  await page.locator(`[data-map="${map}"]`).click({ force: true });
+  await page.locator('#reset').click({ force: true });
+  await page.clock.runFor(1300);
+  let state = await readState(page);
+  await seek(page, state.treasure.x);
+  assert.equal(state.treasure.opened, false);
+  await input.send('down', state.treasure);
+  assert.ok((await readState(page)).grips.some(grip => grip.kind === 'chest'), 'The visible chest must be the actual picked object');
+  await input.send('up', state.treasure);
+  await page.clock.runFor(1600);
+  state = await readState(page);
+  assert.equal(state.treasure.opened, true);
+  assert.ok(state.treasure.lid > 0.99);
+  const loot = state.props.filter(prop => ['coin', 'gold', 'gem'].includes(prop.kind));
+  assert.equal(loot.length, 6);
+  assert.deepEqual(new Set(loot.map(prop => prop.kind)), new Set(['coin', 'gold', 'gem']));
+  await page.screenshot({ path: path.join(output, `treasure-${config.name}-${map}-open.png`) });
+  const collections = [];
+  for (const original of loot) {
+    let item = (await readState(page)).props.find(prop => prop.id === original.id);
+    assert.ok(item, 'Uncollected treasure must remain a physical object');
+    await seek(page, item.x);
+    for (const offset of [0, -0.6, 0.6]) {
+      item = (await readState(page)).props.find(prop => prop.id === original.id);
+      await input.send('down', { x: item.x + offset * (item.radius || item.width / 2), y: item.y });
+      if ((await readState(page)).grips.some(grip => grip.bodyId === item.id)) break;
+      await input.send('up', item);
+    }
+    assert.ok((await readState(page)).grips.some(grip => grip.bodyId === item.id), `The visible ${item.kind} must be draggable`);
+    const before = (await readState(page)).treasure.wealth.total;
+    let collected = null;
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      state = await readState(page);
+      await input.send('move', { x: state.blob.x + 30, y: state.blob.y - 6 });
+      await page.clock.runFor(66);
+      state = await readState(page);
+      if (!state.props.some(prop => prop.id === original.id)) { collected = state; break; }
+    }
+    assert.ok(collected, 'Carrying treasure to Blobby must collect the actual object');
+    assert.equal(collected.grips.some(grip => grip.bodyId === original.id), false);
+    assert.equal(collected.treasure.wealth.total, before + ({ coin: 1, gold: 5, gem: 10 }[original.kind]));
+    assert.equal(collected.treasure.happy, true);
+    collections.push({ kind: original.kind, id: original.id, treasure: collected.treasure });
+    await page.screenshot({ path: path.join(output, `treasure-${config.name}-${map}-${original.kind}-rich.png`) });
+    await input.send('up', { x: collected.blob.x, y: collected.blob.y });
+  }
+  state = await readState(page);
+  assert.deepEqual(state.treasure.wealth, { coins: 3, gold: 1, gems: 2, total: 28 });
+  assert.equal(state.treasure.remaining, 0);
+  await seek(page, state.treasure.x);
+  await input.send('down', state.treasure); await input.send('up', state.treasure);
+  assert.equal((await readState(page)).props.some(prop => ['coin', 'gold', 'gem'].includes(prop.kind)), false, 'Repeated opening cannot duplicate treasure');
+  await page.locator('#pause').click({ force: true });
+  const paused = await readState(page);
+  await page.clock.runFor(1600);
+  assert.deepEqual((await readState(page)).treasure, paused.treasure, 'Pause freezes the chest and happiness');
+  await page.locator('#pause').click({ force: true });
+  const retained = (await readState(page)).treasure;
+  await page.locator(`[data-map="${map === 'pools' ? 'sunset' : 'pools'}"]`).click({ force: true });
+  await page.clock.runFor(500);
+  await page.locator(`[data-map="${map}"]`).click({ force: true });
+  assert.deepEqual((await readState(page)).treasure, retained, 'Returning to a map preserves its opened chest and wealth');
+  await page.locator('#reset').click({ force: true });
+  assert.equal((await readState(page)).treasure.opened, false);
+  assert.equal((await readState(page)).treasure.wealth.total, 0);
+  const report = { map, kind: 'treasure', passed: true, collections };
+  fs.writeFileSync(path.join(output, `treasure-${config.name}-${map}.json`), JSON.stringify(report, null, 2));
+  console.log(`PASS treasure ${config.name}-${map}: real pickup, coins/gold/gems, happiness, pause, map retention and reset`);
+  return report;
+}
+
 async function exerciseFeeding(page, config, output) {
   await page.clock.install({ time: new Date('2026-09-09T14:00:00Z') });
   await page.clock.pauseAt(new Date('2026-09-09T14:00:00.100Z'));
@@ -211,7 +283,8 @@ async function exerciseFeeding(page, config, output) {
   await page.clock.runFor(1600);
   const input = await inputFor(page, config);
   const thorough = config.name === 'desktop' || config.nativeTouch;
-  const requests = [{ map: 'lagoon', id: 'fin', food: 'algae' },
+  const discoveries = process.env.BLOB_FEATURES === 'discoveries';
+  const requests = [...(discoveries ? [] : [{ map: 'lagoon', id: 'fin', food: 'algae' },
     ...(thorough ? [{ map: 'lagoon', id: 'drift', food: 'bait-fish' }, { map: 'lagoon', id: 'skipper', food: 'bait-fish' },
       { map: 'lagoon', id: 'mango', food: 'insects' }, { map: 'lagoon', id: 'fern', food: 'insects' },
       { map: 'pools', id: 'aster', food: 'algae' }, { map: 'pools', id: 'pearl', food: 'shell-bed' }] : []),
@@ -219,12 +292,16 @@ async function exerciseFeeding(page, config, output) {
     ...(thorough ? [{ map: 'sunset', id: 'thistle', food: 'grass', released: true }] : []),
     ...(config.name === 'desktop' ? [{ map: 'lagoon', id: 'moss', food: 'grass', released: true }, { map: 'lagoon', id: 'pebble', food: 'shore-scraps' },
       { map: 'lagoon', id: 'lumi', food: 'plankton' }, { map: 'lagoon', id: 'ollie', food: 'shell-bed' },
-      { map: 'pools', id: 'skipper', food: 'insects' }, { map: 'sunset', id: 'skipper', food: 'bait-fish' }] : [])]
+      { map: 'pools', id: 'skipper', food: 'insects' }, { map: 'sunset', id: 'skipper', food: 'bait-fish' }] : [])]),
+    ...['lagoon', 'pools', 'sunset'].map(map => ({ map, id: 'momo', food: 'banana' }))]
     .filter(request => !process.env.BLOB_FEEDING_CASES || process.env.BLOB_FEEDING_CASES.split(',').includes(`${request.map}:${request.id}`));
   assert.ok(requests.length, 'The feeding selector must execute real meal cases');
   const reports = [];
   try {
     for (const request of requests) reports.push(await mealCase(page, input, config, output, request));
+    if (discoveries || (process.env.BLOB_FEATURES || 'all') === 'all') {
+      for (const map of ['lagoon', 'pools', 'sunset']) reports.push(await treasureCase(page, input, config, output, map));
+    }
   } finally {
     await input.close();
     await page.clock.resume();

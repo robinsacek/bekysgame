@@ -2,11 +2,11 @@ const { comicPose } = require('./antics.js');
 
 const REFERENCE_SIZES = {
   fish: [34, 20], crab: [36, 23], tortoise: [56, 37], bird: [34, 27], jellyfish: [40, 54],
-  shark: [98, 38], octopus: [54, 46], lizard: [49, 24], starfish: [38, 33], rabbit: [40, 37],
+  shark: [98, 38], octopus: [54, 46], lizard: [49, 24], starfish: [38, 33], rabbit: [40, 37], monkey: [48, 52],
 };
 const FEEDING_RHYTHMS = {
   fish: [420, 0.48], shark: [1050, 0.72], jellyfish: [1200, 0.92], octopus: [720, 0.62],
-  crab: [380, 0.45], tortoise: [820, 0.68], bird: [560, 0.52], lizard: [740, 0.50], starfish: [1100, 0.85], rabbit: [330, 0.56],
+  crab: [380, 0.45], tortoise: [820, 0.68], bird: [560, 0.52], lizard: [740, 0.50], starfish: [1100, 0.85], rabbit: [330, 0.56], monkey: [480, 0.64],
 };
 const FACE_PRIORITY = new Set(['held', 'startled', 'fleeing', 'returning', 'stalking', 'lunging', 'foraging', 'snacking', 'visiting', 'visiting-flight', 'inspecting']);
 

@@ -23,6 +23,60 @@ function offerFixture(food = 'plankton') {
   return { island, foraging, resident, source, portion, tick };
 }
 
+test('bananas can be picked from the left tree and regrow without duplicating a portion or leaving a grip', () => {
+  const island = new IslandPhysics(3200, 900, 'lagoon', true);
+  const foraging = island.wildlife.foraging;
+  const fruit = island.tree.fruits[1];
+  const source = foraging.patches.find(patch => patch.treeSlot === 1);
+  const drag = island.grab(71, fruit.body.position);
+  assert.equal(drag?.prop, fruit);
+  assert.equal(fruit.foodType, 'banana');
+  assert.equal(fruit.attached, false);
+  assert.equal(foraging.live(fruit), true);
+  assert.equal(Composite.allConstraints(island.engine.world).includes(fruit.stem), false);
+  assert.equal(foraging.harvest(source, true), null);
+  assert.equal(foraging.retire(fruit), true);
+  assert.equal(island.drags.has(71), false);
+  assert.equal(Composite.allBodies(island.engine.world).includes(fruit.body), false);
+  island.time = source.readyAt + 1;
+  foraging.tick();
+  const renewed = island.tree.fruits[1];
+  assert.notEqual(renewed, fruit);
+  assert.equal(renewed.attached, true);
+  assert.equal(island.grab(72, renewed.body.position)?.prop, renewed);
+  assert.equal(foraging.live(renewed), true);
+  assert.notEqual(renewed.portionId, fruit.portionId);
+  assert.equal(foraging.live(fruit), false);
+  island.dispose();
+});
+
+test('Momo chews a hand-picked banana, rejects other food and shows a satisfied heart', () => {
+  const island = new IslandPhysics(3200, 900, 'lagoon', true);
+  const foraging = island.wildlife.foraging;
+  const monkey = island.wildlife.residents.find(resident => resident.species === 'monkey');
+  const banana = island.tree.detach(0, 0, true);
+  const mouth = foraging.mouthFor(monkey);
+  Body.setPosition(banana.body, { x: mouth.x + 20, y: mouth.y });
+  Body.setVelocity(banana.body, { x: 0, y: 0 });
+  assert.equal(foraging.accepts(monkey, 'banana'), true);
+  assert.equal(foraging.accepts(monkey, 'bait-fish'), false);
+  assert.equal(island.grab(81, banana.body.position)?.prop, banana);
+  const openings = [];
+  for (let frame = 0; frame < 100; frame += 1) {
+    island.time += 1000 / 60; foraging.tick(); foraging.act(monkey);
+    openings.push(feedingPose(monkey, island.time).open);
+  }
+  assert.ok(Math.max(...openings) > 0.8);
+  assert.equal(monkey.meals, 1);
+  assert.equal(monkey.lastMeal.food, 'banana');
+  assert.equal(monkey.lastMeal.assisted, true);
+  assert.equal(monkey.needs.hunger, 0);
+  assert.equal(feedingPose(monkey, island.time).heart, true);
+  assert.equal(island.drags.has(81), false);
+  assert.equal(foraging.live(banana), false);
+  island.dispose();
+});
+
 test('a calm held offer consumes exactly once, updates needs and preserves another independent grip', () => {
   const { island, foraging, resident, source, portion, tick } = offerFixture();
   const second = island.props.find(prop => prop.kind === 'ball');
@@ -117,7 +171,7 @@ test('food competition and repeated depletion remain bounded with fresh ownershi
   assert.equal(island.props.filter(prop => prop.kind === 'food').length, MAX_PORTIONS);
   island.time += 60001; foraging.tick();
   assert.equal(foraging.portions.size, 0);
-  assert.equal(island.wildlife.residents.length, 10);
+  assert.equal(island.wildlife.residents.length, 11);
   island.dispose();
 });
 
@@ -157,7 +211,8 @@ test('every species including sharks can approach its own food and complete a re
     const map = species === 'starfish' ? 'pools' : species === 'rabbit' ? 'sunset' : 'lagoon';
     const island = new IslandPhysics(3200, 900, map, true);
     const resident = island.wildlife.residents.find(item => item.species === species);
-    const patch = island.wildlife.foraging.patches.find(item => item.food === resident.diet.food);
+    const patch = island.wildlife.foraging.patches.find(item => island.wildlife.foraging.accepts(resident, item.food) && island.wildlife.foraging.clearTarget(resident, item));
+    assert.ok(patch, `${species} needs a clear feeding approach`);
     const target = island.wildlife.foraging.targetFor(resident, patch);
     Body.setPosition(resident.body, { x: target.x, y: target.y }); Body.setVelocity(resident.body, { x: 0, y: 0 });
     resident.depth = target.depth; resident.depthTarget = target.depth; resident.foodAt = 0; resident.until = 0;
@@ -165,7 +220,7 @@ test('every species including sharks can approach its own food and complete a re
     assert.ok(resident.meals >= 1, `${species} must actually feed using its production routine`);
     assert.ok(patch.visits >= 1 && patch.readyAt > island.time, 'An eaten patch must briefly replenish instead of yielding food every frame');
     assert.ok(island.wildlife.encounterCounts['food-found'] > 0);
-    assert.equal(island.wildlife.residents.length, 10, 'Feeding must not consume named residents');
+    assert.equal(island.wildlife.residents.length, 11, 'Feeding must not consume named residents');
     island.dispose();
   }
 });
@@ -255,6 +310,19 @@ test('expired reservations restart dwell and unreachable food recycles without t
   island.dispose();
 });
 
+test('birds skip tree-blocked feeding approaches and select reachable food', () => {
+  const island = new IslandPhysics(3200, 900, 'pools', true);
+  const foraging = island.wildlife.foraging;
+  const bird = island.wildlife.residents.find(resident => resident.species === 'bird');
+  const blocked = foraging.patches.find(patch => patch.food === 'insects');
+  bird.state = 'wandering'; bird.until = 0; bird.foodAt = 0;
+  assert.equal(foraging.clearTarget(bird, blocked), false);
+  assert.equal(foraging.act(bird), true);
+  assert.notEqual(bird.foodId, blocked.id);
+  assert.equal(foraging.clearTarget(bird, foraging.patches.find(patch => patch.id === bird.foodId)), true);
+  island.dispose();
+});
+
 test('untouched maps sustain real autonomous meals, chewing and satisfaction for every individual', () => {
   for (const map of ['lagoon', 'pools', 'sunset']) {
     const island = new IslandPhysics(3200, 900, map, true);
@@ -288,7 +356,7 @@ test('untouched maps sustain real autonomous meals, chewing and satisfaction for
     }
     assert.equal(foraging.patches.reduce((sum, source) => sum + source.visits, 0), consumed.size);
     assert.ok(foraging.patches.some(source => source.food === 'bait-fish' && source.visits > 1), 'Eaten bait replenishes and can be eaten in a fresh lifecycle');
-    assert.equal(island.wildlife.residents.length, 10);
+    assert.equal(island.wildlife.residents.length, 11);
     assert.equal(island.objectives.snapshot().completed, 0);
     assert.equal(island.drags.size, 0);
     island.dispose();

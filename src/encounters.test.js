@@ -29,7 +29,7 @@ test('an occasional shark chase produces fleeing and a cartoon snap, with no los
     snapped ||= island.wildlife.residents.some(resident => resident.snapUntil > island.time);
   }
   assert.equal(hunted && fled && snapped, true, 'A hunt must actually stalk, scatter prey, and visibly snap');
-  assert.equal(island.wildlife.residents.length, 10);
+  assert.equal(island.wildlife.residents.length, 11);
   assert.equal(island.snapshot().finite, true);
   assert.ok(island.wildlife.interactions.huntAt > island.time - 6000, 'Hunts must have a substantial cooldown');
   island.dispose();

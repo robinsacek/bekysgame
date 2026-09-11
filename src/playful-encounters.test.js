@@ -15,7 +15,7 @@ test('land neighbors and bird-fish pairs play without losing residents or interr
     assert.equal(second.state, 'play-retreat');
     assert.ok(['play-chase', 'peekaboo'].includes(first.state));
     assert.equal(island.wildlife.interactions.play(first, second), false, 'Cooldowns must prevent repeated frame-by-frame gags');
-    assert.equal(island.wildlife.residents.length, 10);
+    assert.equal(island.wildlife.residents.length, 11);
     first.behaviorUntil = 0; second.behaviorUntil = 0; island.wildlife.interactions.playAt = 0;
     island.grab(42, island.wildlife.position(second), 0);
     assert.equal(island.wildlife.interactions.play(first, second), false, 'Play must not move an animal held by the player');
@@ -34,7 +34,7 @@ test('a jellyfish tingle is brief, bounded and never harms or claims player cont
   assert.equal(fish.state, 'fleeing');
   assert.equal(island.wildlife.interactions.tingle(jellyfish, fish), false);
   assert.equal(Boolean(island.blobHandled), false);
-  assert.equal(island.wildlife.residents.length, 10);
+  assert.equal(island.wildlife.residents.length, 11);
   assert.ok(island.wildlife.interactions.effects.some(effect => effect.kind === 'tingle'));
   island.dispose();
 });

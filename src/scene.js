@@ -219,6 +219,34 @@ export class IslandScene {
     context.restore();
   }
 
+  bananaTree(context, tree) {
+    const { green, leaf, yellow, wood, paper } = this.colors;
+    context.save(); context.scale(tree.scale, tree.scale);
+    const stem = context.createLinearGradient(-18, 0, 18, 0);
+    stem.addColorStop(0, paint(mix(leaf, wood, 0.3))); stem.addColorStop(0.55, paint(mix(green, yellow, 0.35))); stem.addColorStop(1, paint(leaf));
+    context.fillStyle = stem; context.beginPath(); context.moveTo(-18, 0);
+    context.bezierCurveTo(tree.lean * 0.2 - 14, -tree.height * 0.4, tree.lean - 12, -tree.height * 0.8, tree.lean - 8, -tree.height);
+    context.lineTo(tree.lean + 8, -tree.height);
+    context.bezierCurveTo(tree.lean + 10, -tree.height * 0.7, tree.lean * 0.2 + 17, -tree.height * 0.3, 20, 0); context.closePath(); context.fill();
+    context.strokeStyle = paint(mix(yellow, paper, 0.35), 0.5); context.lineWidth = 2;
+    for (const offset of [-7, 4]) {
+      context.beginPath(); context.moveTo(offset, -4);
+      context.quadraticCurveTo(tree.lean * 0.4 + offset, -tree.height * 0.55, tree.lean + offset * 0.4, -tree.height + 10); context.stroke();
+    }
+    context.translate(tree.lean, -tree.height);
+    [[-159, -22], [-119, -83], [-32, -111], [75, -100], [157, -44], [148, 49], [-133, 57]].forEach(([tipX, tipY], index) => {
+      context.save(); context.rotate(this.wind * 0.045 * Math.sin((this.animationTime || 0) * 0.002 + index));
+      context.fillStyle = paint(mix(leaf, green, 0.15 + index % 3 * 0.2));
+      context.beginPath(); context.moveTo(0, 0);
+      context.bezierCurveTo(tipX * 0.2, tipY * 0.3 - 40, tipX * 0.65, tipY - 32, tipX, tipY);
+      context.bezierCurveTo(tipX * 0.72, tipY + 27, tipX * 0.25, tipY * 0.3 + 17, 0, 0); context.fill();
+      context.strokeStyle = paint(mix(green, yellow, 0.48), 0.85); context.lineWidth = 1.8;
+      context.beginPath(); context.moveTo(0, 0); context.quadraticCurveTo(tipX * 0.5, tipY * 0.5 - 5, tipX, tipY); context.stroke();
+      context.restore();
+    });
+    context.restore();
+  }
+
   drawBackground(context, island, layer) {
     const { width, height } = this;
     const { ground, bottom, shore, toe, water, waterStart } = island.layout;
@@ -264,7 +292,8 @@ export class IslandScene {
     context.lineTo(shore, ground + 100); context.lineTo(0, ground + 100); context.fill();
     for (let index = 0; index < 14; index += 1) this.leaf(context, random() * shore * 0.56, ground - 34, 55 + random() * 70, 15 + random() * 9, -2.8 + random() * 2.5, paint(mix(leaf, green, random() * 0.5)));
     const palmScale = clamp(width / 1300, 0.69, 1);
-    this.palm(context, width * 0.027, ground - 30, island.expedition ? 205 : 248, -18, palmScale * 0.77);
+    if (island.expedition) this.palm(context, width * 0.105, ground - 8, island.tree.height, island.tree.lean, palmScale);
+    else this.palm(context, width * 0.027, ground - 30, 248, -18, palmScale * 0.77);
     const beach = context.createLinearGradient(0, ground, 0, height);
     beach.addColorStop(0, paint(mix(sand, paper, 0.23))); beach.addColorStop(0.65, paint(sand)); beach.addColorStop(1, paint(mix(sand, yellow, 0.12)));
     const farToe = island.layout.farToe || width;
@@ -297,7 +326,7 @@ export class IslandScene {
       context.strokeStyle = paint(paper, 0.40); context.lineWidth = 2;
       context.beginPath(); context.moveTo(rock.vertices[1].x, rock.vertices[1].y); context.lineTo(rock.vertices[2].x, rock.vertices[2].y); context.stroke();
     }
-    for (const prop of island.props.filter(item => item.anchor)) {
+    for (const prop of island.props.filter(item => item.anchor && item.kind !== 'chest')) {
       polygon(context, [[prop.anchor.x - 17, ground], [prop.anchor.x, prop.anchor.y - 1], [prop.anchor.x + 17, ground]], paint(mix(this.colors.wood, yellow, 0.14)));
       oval(context, prop.anchor.x, prop.anchor.y, 4, 4, paint(ink, 0.65));
     }
@@ -307,13 +336,13 @@ export class IslandScene {
     const tree = island.tree;
     const base = tree.point({ x: 0, y: 0 });
     context.save(); context.translate(base.x, base.y); context.rotate(tree.body.angle);
-    this.palm(context, 0, 0, tree.height, tree.lean, tree.scale, false, this.wind);
+    this.bananaTree(context, tree);
     context.restore();
     for (const fruit of tree.fruits.filter(item => item.attached)) {
       context.strokeStyle = paint(this.colors.wood); context.lineWidth = 1.8;
       context.beginPath(); context.moveTo(tree.body.position.x + fruit.stem.pointA.x, tree.body.position.y + fruit.stem.pointA.y);
       context.lineTo(fruit.body.position.x, fruit.body.position.y - fruit.radius * 0.65); context.stroke();
-      drawProp(this, context, fruit);
+      drawFoodPortion(this, context, fruit, time);
     }
     for (const rustle of tree.rustles) {
       const age = (time - rustle.time) / 1000;

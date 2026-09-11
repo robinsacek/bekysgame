@@ -249,7 +249,7 @@ async function naturalTimeline(page, engine, map) {
       progressAt += 60000;
     }
     assert.equal(state.finite, true);
-    assert.equal(state.creatures.length, 10, 'No resident may disappear during hunts or comic events');
+    assert.equal(state.creatures.length, 11, 'No resident may disappear during hunts or comic events');
     assert.ok(state.creatures.every(resident => resident.x >= 18 && resident.x <= 3182 && resident.physicalY >= 100 && resident.physicalY <= 870));
     assert.ok(state.props.filter(prop => prop.kind === 'food').length <= 24, 'Food bodies remain bounded during natural play');
     for (const resident of state.creatures) {

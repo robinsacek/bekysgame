@@ -84,7 +84,7 @@ async function exerciseCoast(page, config, output) {
   assert.equal(initial.blob.name, 'Blobby');
   assert.equal(initial.width, 3200);
   assert.ok(initial.camera.width < initial.width, 'The coast must extend beyond the viewport');
-  assert.equal(initial.creatures.length, 10);
+  assert.equal(initial.creatures.length, 11);
   assert.ok(initial.creatures.some(resident => resident.id === 'mango' && resident.species === 'lizard'), 'Little Lagoon must include its own local character');
   assert.ok(initial.height * 0.96 - initial.water > 330, 'The sea must have a deeper playable water column');
   assert.ok(initial.sceneryPixels <= 5000000, 'The scenery cache must remain memory-bounded');
@@ -196,7 +196,7 @@ async function exerciseCoast(page, config, output) {
   assert.deepEqual(retained.creatures, frozen.creatures, 'Map changes must preserve resident identities and activities');
   await page.locator('#reset').click();
   assert.equal((await stateOf(page)).objectives.completed, 0);
-  assert.equal((await stateOf(page)).creatures.length, 10);
+  assert.equal((await stateOf(page)).creatures.length, 11);
   await frames(page, 70);
 }
 

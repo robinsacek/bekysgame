@@ -1,12 +1,13 @@
 const { Vector } = require('matter-js');
 const AQUATIC = new Set(['fish', 'jellyfish', 'shark', 'octopus', 'starfish']);
-const LAND = new Set(['crab', 'tortoise', 'lizard', 'rabbit']);
+const LAND = new Set(['crab', 'tortoise', 'lizard', 'rabbit', 'monkey']);
 const clamp = (value, lower, upper) => Math.max(lower, Math.min(upper, value));
 const distance = (first, second) => Math.hypot(first.x - second.x, first.y - second.y);
 const AGENDAS = {
   fish: 'school and explore', jellyfish: 'pulse and drift', shark: 'patrol and occasionally hunt', octopus: 'explore a den and investigate objects',
   starfish: 'graze on reef rocks', crab: 'find and inspect shells', tortoise: 'browse, rest, and visit food',
   bird: 'perch, cruise, watch fish, and forage', lizard: 'bask and investigate insects', rabbit: 'graze, hop, and play',
+  monkey: 'explore the banana grove, munch bananas, and greet friends',
 };
 
 function encounterResponse(first, second) {

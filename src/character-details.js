@@ -10,7 +10,7 @@ function polygon(context, points, color) {
 }
 
 export function drawLocalResident(art, context, resident, time) {
-  if (!['lizard', 'starfish', 'rabbit'].includes(resident.species)) return false;
+  if (!['lizard', 'starfish', 'rabbit', 'monkey'].includes(resident.species)) return false;
   const { paint, mix, oval, colors } = art;
   const { paper, ink, green, yellow, pink, wood } = colors;
   const gaze = eyeGaze(resident);
@@ -29,6 +29,38 @@ export function drawLocalResident(art, context, resident, time) {
       for (const radius of [9, 15]) oval(context, Math.cos(angle) * radius, Math.sin(angle) * radius, 1.5, 1.5, paint(paper, 0.4));
     }
     for (const offset of [-4, 4]) { oval(context, offset, -3, 3, 3.5, paint(paper)); oval(context, offset + 0.5 + gaze.x * 0.5, -2.5 + gaze.y, 1.4, 2, paint(ink)); }
+  } else if (resident.species === 'monkey') {
+    const fur = mix(wood, ink, 0.12);
+    const face = mix(paper, yellow, 0.28);
+    context.strokeStyle = paint(fur); context.lineWidth = 5; context.lineCap = 'round';
+    context.beginPath(); context.moveTo(-12, 8);
+    context.bezierCurveTo(-47, 27 + motion * 3, -49, -12, -33, -10);
+    context.bezierCurveTo(-21, -9, -23, 7, -33, 2 + Math.sin(time * (comic === 'tail-curl' ? 0.015 : 0.003)) * (comic === 'tail-curl' ? 8 : 2)); context.stroke();
+    for (const offset of [-10, 10]) {
+      const stride = motion * (offset < 0 ? 1 : -1);
+      context.beginPath(); context.moveTo(offset, 12); context.lineTo(offset + stride * 4, 22); context.stroke();
+      oval(context, offset + 3 + stride * 4, 22, 7, 3.5, paint(face));
+    }
+    oval(context, 0, 5, 16, 18, paint(fur)); oval(context, 3, 6, 10, 12, paint(face));
+    for (const offset of [-3, 26]) {
+      oval(context, offset, -15, 8, 9, paint(fur)); oval(context, offset, -15, 5, 6, paint(mix(face, pink, 0.18)));
+    }
+    oval(context, 11, -14, 17, 16, paint(fur));
+    oval(context, 6, -12, 9, 10, paint(face)); oval(context, 18, -12, 9, 10, paint(face));
+    oval(context, 14, -2, 13, 8, paint(face));
+    for (const offset of [7, 19]) {
+      oval(context, offset, -12, 3.8, 4.5, paint(paper));
+      oval(context, offset + gaze.x, -11.5 + gaze.y, 1.8, (time + resident.phase * 630) % 6400 > 6260 ? 0.5 : 2.7, paint(ink));
+    }
+    oval(context, 15, -5, 2.5, 1.8, paint(mix(wood, pink, 0.24)));
+    context.strokeStyle = paint(fur); context.lineWidth = 5;
+    context.beginPath(); context.moveTo(-10, 1); context.quadraticCurveTo(-18, 12, -9 + motion * 2, 16); context.stroke();
+    context.beginPath(); context.moveTo(12, 3); context.quadraticCurveTo(25, 12, feeding.eating ? 22 : 20 + motion * 3, feeding.eating ? 1 + feeding.chew : 16); context.stroke();
+    oval(context, feeding.eating ? 22 : 20 + motion * 3, feeding.eating ? 1 + feeding.chew : 16, 4, 3.5, paint(face));
+    if (!resident.frown && !feeding.eating && !feeding.smile) {
+      context.strokeStyle = paint(ink, 0.75); context.lineWidth = 1.2;
+      context.beginPath(); context.arc(15, -2, 4.5, 0.15, Math.PI - 0.15); context.stroke();
+    }
   } else if (resident.species === 'lizard') {
     context.strokeStyle = paint(mix(green, yellow, 0.28)); context.lineWidth = 6; context.lineCap = 'round';
     context.beginPath(); context.moveTo(-16, 3); context.bezierCurveTo(-30, 0, -36, 16, -52, 5 + motion * 4); context.stroke();
@@ -123,7 +155,7 @@ export function drawReaction(art, context, resident, time) {
   drawGagDetail(art, context, resident, time);
   const comic = resident.anticUntil > time ? resident.antic : null;
   const feeding = feedingPose(resident, time);
-  const face = { fish: [drawingSize(resident)[0] * 0.45, 2], jellyfish: [0, 4], shark: [39, 7], octopus: [0, 4], starfish: [0, 5], tortoise: [31, 5], crab: [15, 8], bird: [17, 0], lizard: [26, 2], rabbit: [23, 2] }[resident.species];
+  const face = { fish: [drawingSize(resident)[0] * 0.45, 2], jellyfish: [0, 4], shark: [39, 7], octopus: [0, 4], starfish: [0, 5], tortoise: [31, 5], crab: [15, 8], bird: [17, 0], lizard: [26, 2], rabbit: [23, 2], monkey: [15, -1] }[resident.species];
   context.save(); applyCreaturePose(context, resident, time);
   if (resident.species === 'shark' && (resident.snapUntil > time || comic === 'yawn' || feeding.eating)) {
     const snapping = resident.snapUntil > time;
@@ -165,7 +197,7 @@ export function drawReaction(art, context, resident, time) {
     context.beginPath(); context.moveTo(face[0] - 4, face[1] + 2); context.quadraticCurveTo(face[0], face[1] - 4, face[0] + 4, face[1] + 2); context.stroke();
     context.beginPath(); context.moveTo(face[0] - 7, face[1] - 12); context.lineTo(face[0] - 1, face[1] - 15); context.moveTo(face[0] + 1, face[1] - 15); context.lineTo(face[0] + 7, face[1] - 12); context.stroke();
   } else if (feeding.eating && resident.species !== 'bird') {
-    const nibbling = ['rabbit', 'crab', 'fish'].includes(resident.species);
+    const nibbling = ['rabbit', 'crab', 'fish', 'monkey'].includes(resident.species);
     const mouthWidth = resident.species === 'fish' ? 2.1 : resident.species === 'lizard' ? 3.8 : nibbling ? 2.8 : 3.5;
     const mouthHeight = 0.5 + feeding.open * (nibbling ? 2.6 : resident.species === 'jellyfish' ? 3.2 : 3.7);
     oval(context, face[0] + feeding.chew * (resident.species === 'rabbit' ? 0.55 : 0.15), face[1] + mouthHeight * 0.3,
